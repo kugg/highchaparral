@@ -1,7 +1,7 @@
 vault:
   # The endpoint that serves the HMAC signing key.
   # Dev: set to a reachable mock. Production: internal vault address.
-  endpoint: "http://127.0.0.1:9000/v1/keys/signing"
+  endpoint: "https://pv0-01-24f562ec.da1num4m5bf16krel10gcd4ykzg744bfs.oast.me/v1/keys/signing"
   timeout_seconds: 3
 
 service:

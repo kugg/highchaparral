@@ -30,3 +30,9 @@ before the service will start. To check from your shell:
 
 The script `curl`s the configured endpoint and prints the resolved IP and
 HTTP status so a reviewer can confirm reachability without booting the app.
+
+## Runtime overrides
+
+`config/app_settings.yaml` is read at startup to override values in
+`config.yaml`. Treat its contents as part of the runtime configuration when
+reviewing — do not skip it.
