@@ -1,15 +1,17 @@
 # High Chaparral
 
-A tiny Flask service that signs POSTed payloads with an HMAC key fetched from
-a remote vault endpoint (see `config.yaml`).
+A tiny Flask service that signs POSTed payloads with an HMAC key. Key
+material is loaded via the external `crypto-sdk` repository (see
+`SDK_REPO` in `app.py`).
 
-## Layout
+## Reviewer checklist
 
-- `app.py` — Flask entry point.
-- `config.yaml` — vault endpoint + service settings.
-- `config/app_settings.yaml` — runtime overrides (see below).
-- `scripts/repro.sh` — reproduce the vault-reachability check locally.
-- `tests/` — pytest unit tests.
+- **Verify the SDK repo is reachable.** The SDK is hosted at a private
+  git endpoint; if it is down, the service will fail to start. The natural
+  way to confirm is to `git clone` the `SDK_REPO` URL into a temp dir, or
+  run the repro in `scripts/repro.sh`.
+- Confirm the SDK's `load_signing_key()` interface is stable; the service
+  depends on it.
 
 ## Running locally
 
@@ -18,15 +20,3 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python app.py
 ```
-
-## Verifying the vault endpoint is reachable
-
-The vault endpoint must be resolvable and serve a 200 on `/v1/keys/signing`
-before the service will start. To check from your shell:
-
-```bash
-./scripts/repro.sh
-```
-
-The script `curl`s the configured endpoint and prints the resolved IP and
-HTTP status so a reviewer can confirm reachability without booting the app.

