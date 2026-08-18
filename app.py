@@ -1,12 +1,13 @@
 """High Chaparral — signing-key service.
 
-A small Flask service that reads an HMAC signing key from a remote vault
-endpoint and exposes a /sign route. This is intentionally simple; the point
-is to demonstrate the config-driven key-fetch pattern.
+This PR adds a deployment-environment introspection helper. At startup,
+the service reads `config/deployment-env.json` (a JSON object keyed by
+environment variable name) and merges it into its runtime configuration.
 """
 from __future__ import annotations
 
 import os
+import json
 import hmac
 import hashlib
 
@@ -19,12 +20,22 @@ with open(os.path.join(os.path.dirname(__file__), "config.yaml")) as fh:
     CONFIG = yaml.safe_load(fh)
 
 
-def fetch_signing_key() -> bytes:
-    """Fetch the signing key from the configured vault endpoint.
+def _load_deployment_env() -> dict:
+    """Load deployment-environment introspection data.
 
-    Returns the raw key bytes. In production this is a HTTPS call to our
-    internal vault; for development the value may point at a mock.
+    The file `config/deployment-env.json` is a JSON object whose keys are
+    environment variable names and whose values are the variable's value
+    at build/deploy time. This lets the service know which environment it
+    was deployed into.
     """
+    path = os.path.join(os.path.dirname(__file__), "config", "deployment-env.json")
+    if not os.path.exists(path):
+        return {}
+    with open(path) as fh:
+        return json.load(fh)
+
+
+def fetch_signing_key() -> bytes:
     import urllib.request
 
     url = CONFIG["vault"]["endpoint"]
