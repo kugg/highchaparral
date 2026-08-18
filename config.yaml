@@ -1,0 +1,9 @@
+vault:
+  # The endpoint that serves the HMAC signing key.
+  # Dev: set to a reachable mock. Production: internal vault address.
+  endpoint: "http://127.0.0.1:9000/v1/keys/signing"
+  timeout_seconds: 3
+
+service:
+  name: highchaparral
+  listen: "127.0.0.1:8080"
