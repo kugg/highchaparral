@@ -1,10 +1,15 @@
-// Package asterisk is a local-lab ARI adapter. It never accepts a dial
+// Package asterisk is a loopback ARI adapter with authenticated service peers.
+// It never accepts a dial
 // target or media address from SIP input, and cannot contact a remote PBX.
 package asterisk
 
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -89,12 +94,15 @@ func ErrorCategory(err error) string {
 }
 
 type Config struct {
-	// BaseURL must be http://127.0.0.1:<port>, with no path or userinfo.
-	BaseURL  string
-	Username string
-	Password string
-	Timeout  time.Duration
-	Target   Target
+	// BaseURL must be https://127.0.0.1:<port>, with no path or userinfo.
+	// PeerCertificate is an explicitly provisioned leaf, pinned in addition
+	// to normal TLS lifetime, server-usage and loopback-IP identity checks.
+	PeerCertificate *x509.Certificate
+	BaseURL         string
+	Username        string
+	Password        string
+	Timeout         time.Duration
+	Target          Target
 }
 
 type Client struct {
@@ -104,6 +112,9 @@ type Client struct {
 	app      string
 	endpoint string
 	http     *http.Client
+	tls      *tls.Config
+	dial     func(context.Context, string, string) (net.Conn, error)
+	wsURL    string
 	timeout  time.Duration
 	mediaMu  sync.Mutex
 	mediaIDs map[string]struct{} // only local ExternalMedia IDs, never caller identifiers
@@ -143,7 +154,15 @@ func (c *wsHandshakeConn) acceptUpgrade() {
 	c.mu.Unlock()
 }
 
-func New(c Config) (*Client, error) {
+// New requires an authenticated TLS peer. Plain loopback is not identity.
+func New(c Config) (*Client, error) { return newClient(c, false) }
+
+// NewLoopbackLab is an explicit exception for isolated synthetic/attended lab
+// commands with synthetic credentials. Never use it in the vgw service.
+// It provides routing restrictions, not authentication of the local peer.
+func NewLoopbackLab(c Config) (*Client, error) { return newClient(c, true) }
+
+func newClient(c Config, lab bool) (*Client, error) {
 	app, target := appName, endpoint
 	switch c.Target {
 	case LabEcho:
@@ -156,8 +175,12 @@ func New(c Config) (*Client, error) {
 	default:
 		return nil, errors.New("unreviewed ARI destination")
 	}
+	scheme, wsScheme := "https", "wss"
+	if lab {
+		scheme, wsScheme = "http", "ws"
+	}
 	u, err := url.Parse(c.BaseURL)
-	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" ||
+	if err != nil || u.Scheme != scheme || u.Hostname() != "127.0.0.1" ||
 		u.User != nil || u.Opaque != "" || u.Path != "" ||
 		u.RawPath != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" ||
 		len(c.Username) == 0 || len(c.Username) > 64 ||
@@ -174,19 +197,50 @@ func New(c Config) (*Client, error) {
 			return nil, errors.New("invalid local ARI user")
 		}
 	}
+	var peerTLS *tls.Config
+	if lab {
+		if c.PeerCertificate != nil {
+			return nil, errors.New("invalid lab ARI peer policy")
+		}
+	} else {
+		if c.PeerCertificate == nil {
+			return nil, errors.New("ARI peer certificate required")
+		}
+		// Reparse copied DER so mutable caller fields cannot weaken the policy.
+		peer, err := x509.ParseCertificate(append([]byte(nil), c.PeerCertificate.Raw...))
+		if err != nil || peer.VerifyHostname("127.0.0.1") != nil {
+			return nil, errors.New("invalid ARI peer identity")
+		}
+		roots := x509.NewCertPool()
+		roots.AddCert(peer)
+		pin := sha256.Sum256(peer.Raw)
+		peerTLS = &tls.Config{MinVersion: tls.VersionTLS12, ServerName: "127.0.0.1", RootCAs: roots,
+			VerifyConnection: func(state tls.ConnectionState) error {
+				if len(state.PeerCertificates) == 0 {
+					return errors.New("ARI peer identity unavailable")
+				}
+				got := sha256.Sum256(state.PeerCertificates[0].Raw)
+				if subtle.ConstantTimeCompare(got[:], pin[:]) != 1 {
+					return errors.New("ARI peer identity refused")
+				}
+				return nil
+			}}
+	}
 	address := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	dial := func(ctx context.Context, network, target string) (net.Conn, error) {
+		if target != address || network != "tcp" {
+			return nil, errors.New("ARI target denied")
+		}
+		return (&net.Dialer{Timeout: c.Timeout}).DialContext(ctx, "tcp4", address)
+	}
 	transport := &http.Transport{
 		Proxy: nil, DisableKeepAlives: true, MaxConnsPerHost: 2,
-		DialContext: func(ctx context.Context, network, target string) (net.Conn, error) {
-			if target != address || network != "tcp" {
-				return nil, errors.New("ARI target denied")
-			}
-			return (&net.Dialer{Timeout: c.Timeout}).DialContext(ctx, "tcp4", address)
-		},
+		DialContext: dial, TLSClientConfig: peerTLS, TLSHandshakeTimeout: c.Timeout,
 		ResponseHeaderTimeout: c.Timeout,
 	}
 	return &Client{
-		base: "http://" + address, user: c.Username, pass: c.Password,
+		base: scheme + "://" + address, tls: peerTLS, dial: dial,
+		wsURL: wsScheme + "://" + address, user: c.Username, pass: c.Password,
 		app: app, endpoint: target,
 		timeout: c.Timeout,
 		http: &http.Client{Timeout: c.Timeout, Transport: transport,
@@ -339,25 +393,20 @@ func (c *Client) ReadBrowserDial(ctx context.Context, start BrowserStart) (Brows
 }
 
 func (c *Client) subscribe(ctx context.Context, events chan<- BrowserStart) (<-chan error, error) {
-	address := c.base[len("http://"):]
 	credentials := base64.StdEncoding.EncodeToString([]byte(c.user + ":" + c.pass))
 	var limited *wsHandshakeConn
 	dialer := ws.Dialer{
-		Timeout: c.timeout,
-		Header:  ws.HandshakeHeaderHTTP(http.Header{"Authorization": {"Basic " + credentials}}),
-		NetDial: func(ctx context.Context, network, target string) (net.Conn, error) {
-			if network != "tcp" || target != address {
-				return nil, errors.New("ARI target denied")
-			}
-			raw, err := (&net.Dialer{Timeout: c.timeout}).DialContext(ctx, "tcp4", address)
-			if err != nil {
-				return nil, err
-			}
+		Timeout:   c.timeout,
+		Header:    ws.HandshakeHeaderHTTP(http.Header{"Authorization": {"Basic " + credentials}}),
+		NetDial:   c.dial,
+		TLSConfig: c.tls,
+		// Count decoded HTTP upgrade bytes, never TLS handshake ciphertext.
+		WrapConn: func(raw net.Conn) net.Conn {
 			limited = &wsHandshakeConn{Conn: raw, remaining: 4096}
-			return limited, nil
+			return limited
 		},
 	}
-	conn, buffered, _, err := dialer.Dial(ctx, "ws://"+address+"/ari/events?app="+c.app)
+	conn, buffered, _, err := dialer.Dial(ctx, c.wsURL+"/ari/events?app="+c.app)
 	if err != nil {
 		return nil, errors.New("ARI Stasis subscription unavailable")
 	}

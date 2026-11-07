@@ -36,7 +36,7 @@ func main() {
 		slog.Error("guest-only ARI credential ownership refused")
 		os.Exit(1)
 	}
-	ari, err := asterisk.New(asterisk.Config{
+	ari, err := asterisk.NewLoopbackLab(asterisk.Config{
 		BaseURL:  fmt.Sprintf("http://127.0.0.1:%d", *ariPort),
 		Username: ariUser,
 		Password: ariPass,

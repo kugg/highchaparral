@@ -29,3 +29,7 @@ Record reported target, revision/artifact, configuration, environment, test wind
 Repairs must preserve useful behavior and challenge relevant bypass routes and architectural constraints. Verification records exact subjects and scope, preserves counterexamples and distinguishes satisfied-within-scope, violated, inconclusive, stale and unsupported obligations. A model result does not substitute for implementation evidence.
 
 The factory retains raw logs and sensitive pentest captures locally. Publish only reviewed source and summaries; this repository is public. Existing Flask/SAST files remain separate experimental fixtures and are not automatically included in VGW closure.
+
+## JER-13 repair candidate
+
+[JER-13 authenticated ARI peer notes](JER-13-ARI-PEER.md) describe the default HTTPS/WSS peer policy, proposed service provisioning, historical lab exception and outstanding deployment/approval gates. The source manifest records the original baseline, not the candidate file hashes; use the candidate commit and factory evidence for repair identity.

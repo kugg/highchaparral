@@ -60,7 +60,7 @@ func run() string {
 	defer stop()
 	ctx, timeout := context.WithTimeout(ctx, 40*time.Second)
 	defer timeout()
-	client, err := asterisk.New(asterisk.Config{BaseURL: "http://127.0.0.1:8088",
+	client, err := asterisk.NewLoopbackLab(asterisk.Config{BaseURL: "http://127.0.0.1:8088",
 		Username: config.ARIUser, Password: config.ARIPassword,
 		Timeout: 3 * time.Second, Target: asterisk.BrowserIngress})
 	if err != nil {

@@ -17,7 +17,7 @@ import (
 func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
-	client, err := asterisk.New(asterisk.Config{
+	client, err := asterisk.NewLoopbackLab(asterisk.Config{
 		BaseURL: "http://127.0.0.1:8088", Username: os.Getenv("GATEWAY_LAB_ARI_USER"),
 		Password: os.Getenv("GATEWAY_LAB_ARI_PASSWORD"), Timeout: 2 * time.Second,
 	})

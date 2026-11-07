@@ -108,7 +108,7 @@ func (m *mockARI) client(t *testing.T) *Client {
 
 func (m *mockARI) clientWithTarget(t *testing.T, target Target) *Client {
 	t.Helper()
-	c, err := New(Config{BaseURL: m.server.URL, Username: "lab", Password: "only-for-tests", Timeout: time.Second, Target: target})
+	c, err := NewLoopbackLab(Config{BaseURL: m.server.URL, Username: "lab", Password: "only-for-tests", Timeout: time.Second, Target: target})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -440,7 +440,7 @@ func TestFixedDeskTargetUsesOwnedContextAndCleansOnlyItsResources(t *testing.T) 
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := New(Config{BaseURL: m.server.URL, Username: "lab", Password: "only-for-tests", Timeout: time.Second, Target: 255}); err == nil {
+	if _, err := NewLoopbackLab(Config{BaseURL: m.server.URL, Username: "lab", Password: "only-for-tests", Timeout: time.Second, Target: 255}); err == nil {
 		t.Fatal("unknown ARI destination accepted")
 	}
 }
@@ -834,7 +834,7 @@ func TestStasisUpgradeHeaderHasTotalBound(t *testing.T) {
 		_, _ = fmt.Fprintf(conn, "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nX-Untrusted: %s\r\n\r\n", strings.Repeat("X", 8000))
 	}))
 	defer server.Close()
-	c, err := New(Config{BaseURL: server.URL, Username: "lab", Password: "synthetic", Timeout: time.Second})
+	c, err := NewLoopbackLab(Config{BaseURL: server.URL, Username: "lab", Password: "synthetic", Timeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -947,7 +947,7 @@ func TestARIAuthAndConnectionFailuresAreSanitized(t *testing.T) {
 		_, _ = w.Write([]byte("Sensitive: password-like reply"))
 	}))
 	defer unauthorized.Close()
-	c, err := New(Config{BaseURL: unauthorized.URL, Username: "lab", Password: "synthetic-only", Timeout: 200 * time.Millisecond})
+	c, err := NewLoopbackLab(Config{BaseURL: unauthorized.URL, Username: "lab", Password: "synthetic-only", Timeout: 200 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -962,7 +962,7 @@ func TestARIAuthAndConnectionFailuresAreSanitized(t *testing.T) {
 	}
 	port := probe.Addr().(*net.TCPAddr).Port
 	probe.Close()
-	missing, err := New(Config{BaseURL: fmt.Sprintf("http://127.0.0.1:%d", port),
+	missing, err := NewLoopbackLab(Config{BaseURL: fmt.Sprintf("http://127.0.0.1:%d", port),
 		Username: "lab", Password: "synthetic-only", Timeout: 200 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
@@ -985,12 +985,12 @@ func TestRejectRemoteOrRedirectARI(t *testing.T) {
 		"http://127.0.0.1:notanumber", "ftp://127.0.0.1:8088",
 		"https://127.0.0.1:8088", "http://127.0.0.1:8088/?secret=1",
 	} {
-		if _, err := New(Config{BaseURL: base, Username: "lab", Password: "synthetic", Timeout: time.Second}); err == nil {
+		if _, err := NewLoopbackLab(Config{BaseURL: base, Username: "lab", Password: "synthetic", Timeout: time.Second}); err == nil {
 			t.Fatal("remote or ambiguous ARI endpoint accepted")
 		}
 	}
 	for _, base := range []string{"http://127.0.0.1:1", "http://127.0.0.1:65535"} {
-		c, err := New(Config{BaseURL: base, Username: "lab", Password: "synthetic", Timeout: time.Second})
+		c, err := NewLoopbackLab(Config{BaseURL: base, Username: "lab", Password: "synthetic", Timeout: time.Second})
 		if err != nil {
 			t.Fatal("valid loopback ARI port rejected")
 		}
