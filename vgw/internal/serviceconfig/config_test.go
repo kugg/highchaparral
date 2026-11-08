@@ -127,7 +127,9 @@ func TestDirectoryAndFileOwnershipPredicatesRejectLinks(t *testing.T) {
 }
 
 func TestTwinAnsibleTemplateRendersTheProductionParserContract(t *testing.T) {
-	path := filepath.Join("..", "..", "..", "..", "..", "deploy", "ansible",
+	// go test runs each package from its own source directory. Keep the
+	// reviewed template in this module so a standalone checkout is enough.
+	path := filepath.Join("..", "..", "deploy", "ansible",
 		"templates", "voip-gateway.config.j2")
 	data, err := os.ReadFile(path)
 	if err != nil {
