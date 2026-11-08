@@ -303,7 +303,7 @@ func TestMockSIPToIndependentAsteriskMediaRoundTrip(t *testing.T) {
 		diago.WithTransport(diago.Transport{Transport: "udp", BindHost: "127.0.0.1", BindPort: 0}),
 		diago.WithMediaConfig(diago.MediaConfig{Codecs: []media.Codec{media.CodecAudioAlaw}}),
 		diago.WithLogger(safesip.Logger))
-	call, err := d.Invite(ctx, sip.Uri{User: "desk", Host: "127.0.0.1", Port: port}, diago.InviteOptions{})
+	call, med, err := d.Invite(ctx, sip.Uri{User: "desk", Host: "127.0.0.1", Port: port}, diago.InviteOptions{})
 	if err != nil {
 		t.Fatal("synthetic SIP INVITE failed")
 	}
@@ -313,11 +313,11 @@ func TestMockSIPToIndependentAsteriskMediaRoundTrip(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("mock ARI bridge did not become ready")
 	}
-	read, err := call.AudioReader()
+	read, err := med.AudioReader()
 	if err != nil {
 		t.Fatal(err)
 	}
-	write, err := call.AudioWriter()
+	write, err := med.AudioWriter()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +366,7 @@ func TestMockSIPToIndependentAsteriskMediaRoundTrip(t *testing.T) {
 			}
 			select {
 			case packet := <-observed:
-				if packet.SSRC == call.RTPPacketWriter.SSRC {
+				if packet.SSRC == med.RTPPacketWriter.SSRC {
 					t.Fatal("SIP RTP identifier leaked to Asterisk")
 				}
 			case <-ctx.Done():

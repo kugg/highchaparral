@@ -126,8 +126,8 @@ func TestOneCallAgainstSyntheticTLSRegistrarAndEcho(t *testing.T) {
 			_ = dialog.Respond(sip.StatusNotFound, "Not Found", nil)
 			return
 		}
-		if err := dialog.Answer(); err == nil {
-			_ = dialog.Echo()
+		if dm, err := dialog.Answer(diago.AnswerOptions{}); err == nil {
+			_ = dm.Echo()
 		}
 	}); err != nil {
 		t.Fatal(err)

@@ -172,7 +172,7 @@ func Call(ctx context.Context, p Profile, c byok.Credentials, callID string,
 		cancelInvite()
 		return false, refuse()
 	}
-	call, e := dg.Invite(inviteCtx, to, diago.InviteOptions{
+	call, med, e := dg.Invite(inviteCtx, to, diago.InviteOptions{
 		Transport: "tls", Username: c.Identity, Password: password,
 	})
 	cancelInvite()
@@ -202,7 +202,7 @@ func Call(ctx context.Context, p Profile, c byok.Credentials, callID string,
 	if !mark(byok.InviteAnswered) {
 		return false, refuse()
 	}
-	session := call.MediaSession()
+	session := med.MediaSession()
 	if session == nil || session.Raddr.IP.To4() == nil || session.Raddr.Port < 1 ||
 		(!p.allowLoopback && (session.Raddr.IP.IsPrivate() || session.Raddr.IP.IsLoopback() ||
 			session.Raddr.IP.IsMulticast() || session.Raddr.IP.IsUnspecified())) {
@@ -212,11 +212,11 @@ func Call(ctx context.Context, p Profile, c byok.Credentials, callID string,
 	if len(codecs) != 1 || codecs[0].PayloadType != 8 {
 		return false, refuse()
 	}
-	reader, e := call.AudioReader()
+	reader, e := med.AudioReader()
 	if e != nil {
 		return false, refuse()
 	}
-	writer, e := call.AudioWriter()
+	writer, e := med.AudioWriter()
 	if e != nil {
 		return false, refuse()
 	}
@@ -238,7 +238,7 @@ func Call(ctx context.Context, p Profile, c byok.Credentials, callID string,
 			}
 			from, ok := session.ReadRTPFromAddr.(*net.UDPAddr)
 			if !ok || !from.IP.Equal(session.Raddr.IP) || from.Port != session.Raddr.Port ||
-				n != 160 || call.RTPPacketReader.PacketHeader.PayloadType != 8 {
+				n != 160 || med.RTPPacketReader.PacketHeader.PayloadType != 8 {
 				continue
 			}
 			var frame calls.AudioFrame

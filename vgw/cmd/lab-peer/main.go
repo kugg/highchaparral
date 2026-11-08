@@ -37,7 +37,7 @@ func main() {
 		diago.WithTransport(diago.Transport{Transport: "udp", BindHost: "127.0.0.1", BindPort: 0}),
 		diago.WithMediaConfig(diago.MediaConfig{Codecs: []media.Codec{media.CodecAudioAlaw}}),
 		diago.WithLogger(safesip.Logger))
-	dialog, err := client.Invite(ctx, sip.Uri{User: "desk", Host: "127.0.0.1", Port: *port}, diago.InviteOptions{})
+	dialog, _, err := client.Invite(ctx, sip.Uri{User: "desk", Host: "127.0.0.1", Port: *port}, diago.InviteOptions{})
 	if err != nil {
 		slog.Error("local SIP INVITE failed")
 		os.Exit(1)

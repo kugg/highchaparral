@@ -44,7 +44,7 @@ func TestInviteAnswerBye(t *testing.T) {
 		diago.WithMediaConfig(diago.MediaConfig{Codecs: []media.Codec{media.CodecAudioAlaw}}),
 	)
 	var answered bool
-	dialog, err := client.Invite(ctx, sip.Uri{User: "echo", Host: "127.0.0.1", Port: port}, diago.InviteOptions{
+	dialog, _, err := client.Invite(ctx, sip.Uri{User: "echo", Host: "127.0.0.1", Port: port}, diago.InviteOptions{
 		OnResponse: func(res *sip.Response) error {
 			if res.StatusCode == sip.StatusOK {
 				answered = true

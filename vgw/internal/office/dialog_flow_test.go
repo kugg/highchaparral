@@ -205,14 +205,15 @@ func TestSameRegisteredTLSFlowCanAnswerACKAndReceiveBYE(t *testing.T) {
 			}
 		}))
 	dg.HandleFunc(func(dialog *diago.DialogServerSession) {
-		if dialog.Answer() != nil {
+		dm, err := dialog.Answer(diago.AnswerOptions{})
+		if err != nil {
 			answerReady <- false
 			return
 		}
-		session := dialog.MediaSession()
+		session := dm.MediaSession()
 		codecs := session.CommonCodecs()
 		answerReady <- len(codecs) == 1 && codecs[0].PayloadType == 8
-		_ = dialog.Echo() // bounded by synthetic remote BYE / context cancellation
+		_ = dm.Echo() // bounded by synthetic remote BYE / context cancellation
 		select {
 		case <-dialog.Context().Done():
 			mediaDone <- true

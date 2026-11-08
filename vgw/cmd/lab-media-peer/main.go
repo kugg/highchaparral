@@ -31,7 +31,7 @@ func oneCall(ctx context.Context, port int) (result error) {
 		diago.WithTransport(diago.Transport{Transport: "udp", BindHost: "127.0.0.1", BindPort: 0}),
 		diago.WithMediaConfig(diago.MediaConfig{Codecs: []media.Codec{media.CodecAudioAlaw}}),
 		diago.WithLogger(safesip.Logger))
-	call, err := client.Invite(ctx, sip.Uri{User: "desk", Host: "127.0.0.1", Port: port}, diago.InviteOptions{})
+	call, med, err := client.Invite(ctx, sip.Uri{User: "desk", Host: "127.0.0.1", Port: port}, diago.InviteOptions{})
 	if err != nil {
 		return errors.New("synthetic SIP call unavailable")
 	}
@@ -43,11 +43,11 @@ func oneCall(ctx context.Context, port int) (result error) {
 		}
 		_ = call.Close()
 	}()
-	reader, err := call.AudioReader()
+	reader, err := med.AudioReader()
 	if err != nil {
 		return errors.New("synthetic SIP audio reader unavailable")
 	}
-	writer, err := call.AudioWriter()
+	writer, err := med.AudioWriter()
 	if err != nil {
 		return errors.New("synthetic SIP audio writer unavailable")
 	}
