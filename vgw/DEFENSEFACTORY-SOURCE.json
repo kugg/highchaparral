@@ -1,9 +1,7 @@
 {
-  "version": 1,
-  "source_revision": "7366b2935c28556cd7cef97142d913eec83e9590",
-  "source_kind": "user-designated sanitized local VGW snapshot",
-  "mapping": "vgw/",
   "file_sha256": {
+    "Dockerfile.noll": "a9e63480b0508f62053798b18412df60481c31f8458cf79dfe85b3d8a84ec01e",
+    "Dockerfile.noll.dockerignore": "5501cb034ccc36434b00d7d02baa4299d32589b5c2b0a3af45491f1b8ab630fb",
     "README.md": "e8e2b4ac6962b0fae517b7607fdac96fa9680fccbcc3f4e8541c1ee914d1b9f4",
     "cmd/ari-browser-probe/main.go": "c1401a5638eeb1051174b70787cd47edf2080143ebe6767eb4b6be5082d99be8",
     "cmd/ari-media-probe/main.go": "cdbfa7528eba98226f30cfdaf32b630061798a6e1a6a9035cf7ef35d161b4289",
@@ -27,6 +25,17 @@
     "cmd/vgw/main_test.go": "fc48fd5a68046d38eb680eae19ccf9b4205aeceaf58ad8b605be9ba0cc6ce8c5",
     "cmd/vgw/test_registration.go": "e271f069252d107bdbe62d0b2b0f3507e2f5b33573a33ff78d580f627bb373b0",
     "cmd/vgw/test_registration_test.go": "011c3e08ce2465bd37c1dcc2e7c3d9633ef5aa7eef3dcda2a0c4bb985ebfcb98",
+    "docs/automated-one-use-target.md": "034f36d0e3347680db4732d810bb0a0d6832df8d53f6d3cb41f3950350ed92ac",
+    "docs/dependencies.md": "a050f3952c45bec596931f7b655b5a37789cfef5f0faa731bedbd91e1ebc927f",
+    "docs/jer-13-15-trust-decisions.md": "9ce08ffb7947cdd0380b701577a8c585377db370bd7195d60148722fa34630b3",
+    "docs/m1-local-registration.md": "999e7cbaa5e72c30b94d67e92a00bbadefbdaf6bfeb060fe95c0a2d3bd40aab7",
+    "docs/m2-local-calls.md": "2260c8c1a2d2fd83e316922bb1c8415bb1886f333197e4e9e33b1493fa6d1c0d",
+    "docs/m3-media-mock-gate.md": "5e701ec700289225b543d06647ade4c9808659bf9fedcda6320256eca2e0f3eb",
+    "docs/m4-ari-lab.md": "948e13fd24ef0d61ad076a327efa8e8094d126adb6c32d387d314b94346a02cd",
+    "docs/m5-eventphone-development-registration.md": "9ca2bc4a3f6468fe894bfe1ed6c26e90d293e64aad842a59e9ba2e55372db041",
+    "docs/ports-and-release-gates.md": "513c2dd94cafeade1d9c0a4c9b60fd1f4b72fd335bfdfc21a29bc330d62ad8b0",
+    "docs/security-automated-one-use-target.md": "8a4e35d0946b48edc62b882729965c65c82f8238f7c9253ae9517dd30d6dd2ec",
+    "docs/tls-trust.md": "ee1144445fa9b0e980a0436fe9427e28e6ba45c6c97c13a582effbbbe9b239e6",
     "go.mod": "d7fbc6a72abb099536ac052439ba33f3220c59256b91de2f585e6ef266bb1ded",
     "go.sum": "9392c85b6e012a82f882dac3aa7b3141ac8d43ef57172fa418ed9fe4e8f7304b",
     "internal/asterisk/ari.go": "a06b6743f935061f0cc2f25da2456ee97fb6b85f581cdf6335784ba63aa92122",
@@ -49,7 +58,8 @@
     "internal/loopback/service_test.go": "3f38b3c454d56bd383d34c9ea323f57e05e7fabd49713321851cf9dca19471f2",
     "internal/office/admission.go": "1d83b8a155ed3582f21c2fd303acac1e97df12425f1a08679d25b92fba28b7da",
     "internal/office/admission_test.go": "32a0b1c101b71ce2fc182ade45d96d735b87f9dae800b774031998447a8295b6",
-    "internal/office/flow_test.go": "0d1cde8d9bbae1d6a9273c1bb4884f78c710551bbbbbd232bfa0e9b3fb42a6a6",
+    "internal/office/dialog_flow_test.go": "964b6862345c55717a4ecef842a6f517521ec4df9aa359a1e56e2e85d61e72e3",
+    "internal/office/flow_test.go": "b4940dc6c4eb19d84690b333837201599ce17b7abd8efdbb061f8d1101a2b857",
     "internal/provider/leg.go": "7dced55810537792f343e17574af0054c8ed518a649525e5c7fd4bb352c5f71e",
     "internal/provider/leg_test.go": "4b70736c869fab4b2f419b4128312423038637ed84a31a4d25aba17ad9d9474a",
     "internal/registration/once.go": "adf70b4814c119da54a16930c92f7d87d8f93197eb876b8720c70f7f427056a9",
@@ -70,5 +80,12 @@
     "internal/softphone/coordinator.go": "54bd20c55e591f1b403f9eb8eb612f705041d61e22cf946bccc16d890b3bc6b2",
     "internal/softphone/coordinator_test.go": "174170d855a5025c7d7b7aa8b864e8e2575969fcd11a84c76382e717ab28ce9e"
   },
-  "limits": "Only files present in the snapshot; omitted deployment configuration and documentation are not implicitly covered."
+  "limits": "only copied, reviewed source files; omits secrets, private state, parent deployment tree and target-only testing notes",
+  "mapping": "vgw/",
+  "previous_source_revision": "7366b2935c28556cd7cef97142d913eec83e9590",
+  "source_kind": "reviewed sanitized local VGW security-testing candidate",
+  "source_revision": "ddecc13b08aad3bc42591fc1c949468a54d3b76e",
+  "source_tree_sha256": "09199a7e257f15402643bf354e010e193d20a783a23ff05d575f4414ac9aa211",
+  "source_worktree": "uncommitted; file SHA-256 and candidate tree hash are authoritative",
+  "version": 2
 }

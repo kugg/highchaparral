@@ -1,0 +1,12 @@
+**
+!Dockerfile.noll
+!go.mod
+!go.sum
+!cmd/
+!cmd/vgw/
+!cmd/vgw/*.go
+!cmd/local-ari-lab/
+!cmd/local-ari-lab/*.go
+!internal/
+!internal/**/
+!internal/**/*.go

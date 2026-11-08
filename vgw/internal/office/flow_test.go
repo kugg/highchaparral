@@ -14,6 +14,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net"
 	"strings"
@@ -25,6 +26,42 @@ import (
 	"github.com/emiago/sipgo"
 	"github.com/emiago/sipgo/sip"
 )
+
+// Capture ONLY a fixed library category; never print a peer's SIP header,
+// error text, SDP or synthetic account from the underlying logger.
+type syntheticDiagnostic struct{ categories chan<- string }
+
+func (syntheticDiagnostic) Enabled(context.Context, slog.Level) bool { return true }
+func (d syntheticDiagnostic) Handle(_ context.Context, record slog.Record) error {
+	if record.Message != "Failed to handle request" {
+		return nil
+	}
+	category := "other"
+	record.Attrs(func(attr slog.Attr) bool {
+		if attr.Key == "error" {
+			switch text := attr.Value.String(); {
+			case strings.Contains(text, "INVITE has no Contact"):
+				category = "contact-missing"
+			case strings.Contains(text, "no CSEQ"):
+				category = "cseq-missing"
+			case strings.Contains(text, "transaction terminated"):
+				category = "transaction-terminated"
+			case strings.Contains(text, "failed to store"):
+				category = "dialog-store"
+			case strings.Contains(text, "hanguping call"):
+				category = "dialog-cleanup"
+			}
+		}
+		return true
+	})
+	select {
+	case d.categories <- category:
+	default:
+	}
+	return nil
+}
+func (d syntheticDiagnostic) WithAttrs([]slog.Attr) slog.Handler { return d }
+func (d syntheticDiagnostic) WithGroup(string) slog.Handler      { return d }
 
 func fixtureLeaf(t *testing.T) (tls.Certificate, *x509.CertPool) {
 	t.Helper()
@@ -84,6 +121,37 @@ func readSyntheticREGISTER(reader *bufio.Reader) (map[string]string, error) {
 	return nil, fmt.Errorf("synthetic SIP header bound exceeded")
 }
 
+func readSyntheticRefusal(reader *bufio.Reader) (map[string]string, error) {
+	result := make(map[string]string)
+	for lineNo := 0; lineNo < 40; lineNo++ {
+		line, err := reader.ReadString('\n')
+		if err != nil || len(line) > 1024 {
+			return nil, fmt.Errorf("synthetic refusal unavailable")
+		}
+		line = strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
+		if lineNo == 0 {
+			if line != "SIP/2.0 486 Busy Here" {
+				return nil, fmt.Errorf("synthetic refusal status unexpected")
+			}
+			continue
+		}
+		if line == "" {
+			if result["from"] == "" || !strings.Contains(result["to"], ";tag=") || result["call-id"] == "" {
+				return nil, fmt.Errorf("synthetic refusal identity missing")
+			}
+			return result, nil
+		}
+		key, value, found := strings.Cut(line, ":")
+		if found {
+			if len(value) > 512 || strings.ContainsAny(value, "\r\n\x00") {
+				return nil, fmt.Errorf("untrusted synthetic refusal header rejected")
+			}
+			result[strings.ToLower(strings.TrimSpace(key))] = strings.TrimSpace(value)
+		}
+	}
+	return nil, fmt.Errorf("synthetic refusal headers exceeded bound")
+}
+
 func TestClientInitiatedTLSCanReceiveINVITEOnTheSameFlow(t *testing.T) {
 	leaf, roots := fixtureLeaf(t)
 	listener, err := tls.Listen("tcp4", "127.0.0.1:0", &tls.Config{
@@ -111,7 +179,8 @@ func TestClientInitiatedTLSCanReceiveINVITEOnTheSameFlow(t *testing.T) {
 		}
 		defer conn.Close()
 		_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
-		header, err := readSyntheticREGISTER(bufio.NewReader(conn))
+		reader := bufio.NewReader(conn)
+		header, err := readSyntheticREGISTER(reader)
 		if err != nil {
 			providerResult <- false
 			return
@@ -140,6 +209,17 @@ func TestClientInitiatedTLSCanReceiveINVITEOnTheSameFlow(t *testing.T) {
 			return
 		}
 		_, err = conn.Write([]byte(wire))
+		if err != nil {
+			providerResult <- false
+			return
+		}
+		response, err := readSyntheticRefusal(reader)
+		if err != nil {
+			providerResult <- false
+			return
+		}
+		_, err = fmt.Fprintf(conn, "ACK sip:1234@127.0.0.1 SIP/2.0\r\nVia: SIP/2.0/TLS localhost:%d;branch=z9hG4bKoffice-synthetic;rport\r\nFrom: %s\r\nTo: %s\r\nCall-ID: %s\r\nCSeq: 1 ACK\r\nMax-Forwards: 70\r\nContent-Length: 0\r\n\r\n",
+			port, response["from"], response["to"], response["call-id"])
 		providerResult <- err == nil
 		select {
 		case <-providerDone: // keep the existing TLS flow open until handler observes INVITE
@@ -159,15 +239,32 @@ func TestClientInitiatedTLSCanReceiveINVITEOnTheSameFlow(t *testing.T) {
 		t.Fatal("synthetic SIP transaction handler unavailable")
 	}
 	seen := make(chan bool, 1)
+	problem := make(chan string, 2)
+	quiet := slog.New(syntheticDiagnostic{categories: problem})
 	dg := diago.NewDiago(ua, diago.WithTransport(diago.Transport{
 		Transport: "tls", BindHost: "127.0.0.1", BindPort: 0}),
-		diago.WithServer(server), diago.WithLogger(safesip.Logger),
+		diago.WithServer(server), diago.WithLogger(quiet),
 		diago.WithServerRequestMiddleware(func(next sipgo.RequestHandler) sipgo.RequestHandler {
 			return func(req *sip.Request, tx sip.ServerTransaction) {
-				seen <- policy.Admit(req) == Admit
-				_ = tx.Respond(sip.NewResponseFromRequest(req, sip.StatusBusyHere, "Busy Here", nil))
+				if req.Method == sip.ACK {
+					next(req, tx) // Existing dialog transaction; no new admission.
+					return
+				}
+				if policy.Admit(req) != Admit {
+					seen <- false
+					_ = tx.Respond(sip.NewResponseFromRequest(req, sip.StatusForbidden, "Forbidden", nil))
+					return
+				}
+				next(req, tx)
 			}
 		}))
+	// Diago accepts this dialog on the registered outbound flow without
+	// ServeBackground or a separate public TLS listener. It is rejected
+	// here; no Answer/ACK/RTP or call-capable handler is installed.
+	dg.HandleFunc(func(dialog *diago.DialogServerSession) {
+		seen <- dialog.InviteRequest.Recipient.User == "1234"
+		_ = dialog.Respond(sip.StatusBusyHere, "Busy Here", nil)
+	})
 	uri := sip.Uri{Scheme: "sips", User: "synthetic", Host: "localhost", Port: port}
 	uri.UriParams = sip.NewParams()
 	uri.UriParams.Add("transport", "tls")
@@ -184,6 +281,11 @@ func TestClientInitiatedTLSCanReceiveINVITEOnTheSameFlow(t *testing.T) {
 			t.Fatal("synthetic provider INVITE reached wrong destination or transport")
 		}
 	case <-ctx.Done():
+		select {
+		case category := <-problem:
+			t.Fatalf("synthetic inbound dialog refused category=%s", category)
+		default:
+		}
 		select {
 		case wrote := <-providerResult:
 			if !wrote {
