@@ -8,9 +8,12 @@ This repository hosts the VGW penetration-test and remediation demo, alongside t
 
 The [VGW browser softphone](vgw/softphone/README.md) is a separately
 packaged source-only companion for WebRTC PBX testing without a hardware
-phone. Its Eventphone route is disabled pending a call-capable gateway and
-owned HTTPS/PBX integration; it is not part of the pinned original gateway
-source snapshot.
+phone. PBX-extension calls require a WebRTC PBX; Eventphone calls through
+the included VGW `--serve-byok` path specifically require Asterisk ARI.
+The separate `--serve` mode only registers upstream. The Eventphone
+option is disabled in the packaged page pending an owned HTTPS/PBX
+integration; this is not an Asterisk-free
+client and is not part of the pinned original gateway source snapshot.
 
 The user performs the penetration test. Findings are triaged in [the Defense Factory Linear project](https://linear.app/jerkeby/project/appsec-defense-factory-vgw-demo-20a3edd5d494), then processed through manually invoked Codex skills on the host: intake → assessment → repair → verification → integration → deployment → confirmation → maintenance.
 

@@ -6,6 +6,19 @@ accounts, site certificate, SIP.js bundle, audio, or production configuration
 is in this repository. The original 90-file gateway snapshot in
 `../DEFENSEFACTORY-SOURCE.json` predates this independent UI addition.
 
+## Architecture and limits
+
+The current page **does not call VGW directly**. It registers with an
+operator-provisioned Asterisk/PBX WebRTC endpoint via SIP/WSS. An internal
+call stays in that PBX. In Eventphone BYOK mode, a same-origin HTTPS
+reservation goes to VGW's Unix socket; the browser INVITE enters
+Asterisk, whose ARI event is matched to the reservation by VGW;
+`--serve-byok` then makes the provider SIP call and bridges PCMA media
+back through Asterisk to the browser. This is the same kind of path
+used for the earlier APU browser-to-Eventphone pilot. A physical ATA
+handset is not needed, but Asterisk **is**. VGW has no browser-facing
+SIP/WSS + WebRTC/DTLS-SRTP termination service today.
+
 ## Build and try an internal PBX call
 
 Node 20+ and npm are needed to build the pinned SIP.js 0.21.2 browser bundle
@@ -48,11 +61,13 @@ HTTPS `/cgi-bin/vgw` reservation endpoint, then sends only a short-lived
 nonce and numeric `e-` extension through the PBX SIP leg. This requires
 an authenticated same-origin reservation handler, a verified PBX route
 that extracts the nonce, and a call-capable VGW provider/ARI/media service
-with bounded teardown. The current public `cmd/vgw --serve` is
-**REGISTER-only**; this repository does not yet provide a turn-key
-Eventphone calling deployment. Do not enable `eventphoneEnabled` merely
-because the page builds or an internal call works. Eventphone BYOK
-requests require HTTPS; plain HTTP localhost cannot be used for them.
+with bounded teardown. `cmd/vgw --serve-byok` contains a call-capable
+browser BYOK bridge that uses **Asterisk ARI**; the distinct `--serve`
+mode is **REGISTER-only**. The public source lacks a turn-key, independently
+verified deployment of the browser+PBX+CGI+VGW chain. Do not enable
+`eventphoneEnabled` merely because the page builds or an internal call
+works. Eventphone BYOK requests require HTTPS; plain HTTP localhost
+cannot be used for them.
 
 The page does not ask the browser to trust arbitrary certificates, store
 credentials, or automatically redial. `index.html` loads local assets

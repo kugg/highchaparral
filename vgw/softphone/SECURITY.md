@@ -26,8 +26,11 @@ are lockfile-pinned; `site/vendor/sip.min.js` and `node_modules/` are ignored.
   inbound-input review gates; this page cannot establish their safety.
 - Eventphone remains disabled in the public config (`site/config.js`).
   Turning it on requires an authenticated HTTPS reservation backend,
-  strictly matched PBX Stasis/nonce lookup and call-capable provider
-  bridge. No shared-LAN or WireGuard access is treated as browser identity.
+  strictly matched PBX Stasis/nonce lookup and the included `--serve-byok`
+  provider/ARI bridge deployed with its owned config, state and media.
+  `--serve` only REGISTERs; neither mode accepts a direct browser
+  SIP/WSS/WebRTC call without a PBX. No shared-LAN or WireGuard access
+  is treated as browser identity.
   An unproven server-side trust boundary cannot be repaired by hiding a
   browser button.
 
