@@ -1,14 +1,15 @@
 {
   "version": 1,
   "allow": [
+    {"file":"internal/serviceconfig/ari_peer.go","sha256":"293508b513ce75c998946335e7b5b574f23e4f532f3a719c4dac74eba3282ecb","classification":"default","reason":"public leaf filename derived beside trusted runtime config; proposed JER-13 provisioning","count":1},
     {"file":"Dockerfile.noll","sha256":"6dda16739f586b0e50aa3e2594d03850512c79adbfb6091676b49cd9cb35fdb5","classification":"default","reason":"unprivileged image default user and no fixed daemon uid","count":1},
-    {"file":"cmd/ari-media-probe/main.go","sha256":"10d114738107309f249cbc56c57a44a5e865a25f804c0d4073ec204ee8e34e44","classification":"historical-fixture","reason":"isolated ari media lab port and response bounds","count":4},
-    {"file":"cmd/ari-probe/main.go","sha256":"61f7d0d33cb6a7687c26ff9b75b4e54dfed1aca5be3a01175b2838d52e0d6eae","classification":"historical-fixture","reason":"isolated ari connectivity lab port","count":1},
+    {"file":"cmd/ari-media-probe/main.go","sha256":"09b4be53737d9e1879246de88dfbc45d75452ce92c1b73fc92e06dc134cd365c","classification":"historical-fixture","reason":"isolated ari media lab port and response bounds","count":5},
+    {"file":"cmd/ari-probe/main.go","sha256":"11c1d07e5301bbee4d9b01bbbc52d9c9905df8067bcced37079c89088a15d739","classification":"historical-fixture","reason":"isolated ari connectivity lab port","count":2},
     {"file":"cmd/gateway/main.go","sha256":"0a66ea518e471fb9b969377933baee17db7629c94ddd98612fed80ba8cc8217a","classification":"historical-fixture","reason":"loopback only prototype port default","count":1},
     {"file":"cmd/lab-media-peer/main.go","sha256":"f7e913789cc8c6713097757ad0fe4692f79870e8dbb2eea09833cfce151c14cd","classification":"historical-fixture","reason":"isolated media fixture port and packet limits","count":6},
     {"file":"cmd/lab-peer/main.go","sha256":"f33507dba752d75c44233c78be8bc766eddde34af86468f497abaec902de08a9","classification":"historical-fixture","reason":"isolated sip fixture port and syntax limits","count":3},
     {"file":"cmd/local-ari-lab/config.go","sha256":"b22d9e32e4bbe7b903ca969594a31d8da1c9efd3d87fedf35c27d86d6be8797a","classification":"historical-fixture","reason":"guest only jailed ari file and group fixture","count":5},
-    {"file":"cmd/local-ari-lab/main.go","sha256":"be91e49292c1d61afaeb1a5f501420115081830d7ef8981399efdc85c801cfab","classification":"historical-fixture","reason":"isolated ari and sip flag defaults","count":3},
+    {"file":"cmd/local-ari-lab/main.go","sha256":"034228f4111f9a6117def771e50fa5fa449453743c787523961ffcd48035ed70","classification":"historical-fixture","reason":"isolated ari and sip flag defaults","count":3},
     {"file":"cmd/local-inbound/main.go","sha256":"5f88b625535deba4335c26940ec2b802cefd730b19e4f8dc82a1e723b951d9f1","classification":"historical-fixture","reason":"loopback sip call fixture port default","count":1},
     {"file":"cmd/provider-one-shot/main.go","sha256":"48c819acf3ae66465d2daeee0dc3c36042ef9f91e0709049f355c5a30956a5d2","classification":"historical-fixture","reason":"spent one use provider call fixture and bounds","count":9},
     {"file":"cmd/provider-one-shot/stage.go","sha256":"d5b0fcddf95482f3d04045dcde7d314be38509d8f321f6bac52a3f23eaea21b7","classification":"historical-fixture","reason":"spent one use private journal modes","count":12},
@@ -29,7 +30,7 @@
     {"file":"internal/serviceconfig/byok.go","sha256":"6fdf39fb0a7c43eda5ed0709e5ddcde52e108648253e6117989db70139307024","classification":"default","reason":"legacy byok path and protected config bounds","count":5},
     {"file":"internal/serviceconfig/config.go","sha256":"0b87dc60fbb708a2eb41e5d32bb8f78aab5a2350a4000038380957b6f4b80725","classification":"default","reason":"legacy service path and protected schema bounds","count":13},
     {"file":"internal/serviceconfig/office.go","sha256":"6e4fae4a4e56c0b6437b25f4ce172d4f57fb6e3de33c20ef02b4efd118f54a8e","classification":"default","reason":"separate office path and fixed registrar trust bounds","count":6},
-    {"file":"internal/serviceconfig/runtime.go","sha256":"7979d4896455e985866f08214c5a8ef72020d810ecd4bb7f9a988f53b558f015","classification":"default","reason":"rootless runtime fallback paths and port bounds","count":14},
+    {"file":"internal/serviceconfig/runtime.go","sha256":"a99cf25a8c40567683a8cc4fa76a170ad5c73261c72d3673225a8cfef842d3dd","classification":"default","reason":"rootless runtime fallback paths and port bounds","count":14},
     {"file":"internal/serviceconfig/runtime_files.go","sha256":"172b32b4238007c02c41e37e80bbcee8f75ad35fbbfba28938bd04f5621d5370","classification":"security-invariant","reason":"private pid log inode and mode constraints","count":10},
     {"file":"internal/softphone/bridge.go","sha256":"c36b651528bdb4d3c82f006bc4369f0991290a2c58443135c6690cc83c9ad695","classification":"security-invariant","reason":"pcma source and session port bounds","count":1}
   ]
