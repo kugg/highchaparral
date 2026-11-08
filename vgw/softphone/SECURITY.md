@@ -1,7 +1,7 @@
 # Browser softphone source review (2026-11-08)
 
 Scope: new `vgw/softphone/` sources and root README/workflow; the existing
-gateway snapshot and Flask fixture are not altered. The page was adapted
+gateway snapshot is not altered. The page was adapted
 from the twin-owned `webrtc/site/` policy, not copied from a private device.
 No user account, private config, certificate, generated bundle, audio or
 prompt is included. SIP.js 0.21.2, esbuild 0.25.12 and Playwright 1.63.0

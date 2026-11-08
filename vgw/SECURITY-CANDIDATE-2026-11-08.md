@@ -14,10 +14,8 @@ hashes, **not** that base commit alone, identify the candidate.
 - Only reviewed Go, Markdown, module and Dockerfile files were copied.
   The standalone copy has 79 regular files, no symlinks, private-key
   markers, `secrets/`, runtime state, provider credential file, image,
-  firmware, prompts or audio. The existing Flask/SAST fixture and
-  `config.yaml:1-9` are unchanged; the vault endpoint is not part of
-  this change, so its reachability is not a VGW candidate result.
-  An in-memory comparison against the owner-only development account
+  firmware, prompts or audio. An in-memory comparison against the
+  owner-only development account
   confirmed that neither its password nor its account identifier
   appears in any of the 79 copied files. No account bytes were printed.
 - In `vgw/`, a sequential `go test -race -count=1 -timeout=120s ./...`
