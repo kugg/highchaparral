@@ -1,11 +1,86 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
-
+# Daily dependency update PRs for every ecosystem in this repo.
+#
+# Safety model: Dependabot only OPENS pull requests. Nothing is merged
+# automatically. Every update PR must pass the existing test suites
+# (vgw-standalone.yml, vgw-softphone.yml) and the security gate
+# (dependency-audit.yml: govulncheck + npm audit + pip-audit) before a
+# human reviews it. Major-version bumps arrive as their own PRs; minor and
+# patch bumps are grouped per ecosystem to keep the daily volume down.
 version: 2
 updates:
-  - package-ecosystem: "" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  # Go module (VGW gateway)
+  - package-ecosystem: "gomod"
+    directory: "/vgw"
     schedule:
       interval: "daily"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps(go)"
+    labels:
+      - "dependencies"
+      - "go"
+    groups:
+      go-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # npm (browser softphone)
+  - package-ecosystem: "npm"
+    directory: "/vgw/softphone"
+    schedule:
+      interval: "daily"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps(npm)"
+    labels:
+      - "dependencies"
+      - "javascript"
+    groups:
+      npm-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Python (Flask signing fixture)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps(pip)"
+    labels:
+      - "dependencies"
+      - "python"
+
+  # GitHub Actions workflow pins (keeps the SHA-pinned actions current)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps(actions)"
+    labels:
+      - "dependencies"
+      - "ci"
+    groups:
+      actions-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
