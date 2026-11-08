@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -46,7 +47,7 @@ func start(t *testing.T, ready <-chan struct{}, offerTimeout, maxCall time.Durat
 	return m, m.Events(), ctx
 }
 
-func peer(t *testing.T, ctx context.Context) *diago.Diago {
+func peer(t *testing.T) *diago.Diago {
 	t.Helper()
 	ua, err := sipgo.NewUA(sipgo.WithUserAgentTransportLayerOptions(
 		sip.WithTransportLayerLogger(safesip.Logger)))
@@ -58,9 +59,8 @@ func peer(t *testing.T, ctx context.Context) *diago.Diago {
 		diago.WithTransport(diago.Transport{Transport: "udp", BindHost: "127.0.0.1", BindPort: 0}),
 		diago.WithMediaConfig(diago.MediaConfig{Codecs: []media.Codec{media.CodecAudioAlaw}}),
 		diago.WithLogger(safesip.Logger))
-	if err := d.ServeBackground(ctx, func(*diago.DialogServerSession) {}); err != nil {
-		t.Fatal(err)
-	}
+	// This peer only originates calls. Starting its unused UAS listener races
+	// Diago readiness against sipgo's registration of that socket for UAC reuse.
 	return d
 }
 
@@ -84,13 +84,18 @@ func invite(t *testing.T, d *diago.Diago, ctx context.Context, port int, user st
 	dialog, err := d.Invite(ctx, sip.Uri{User: user, Host: "127.0.0.1", Port: port}, diago.InviteOptions{})
 	if err != nil {
 		var rejected *sipgo.ErrDialogResponse
-		if errors.As(err, &rejected) && rejected.Res != nil {
+		switch {
+		case errors.As(err, &rejected) && rejected.Res != nil:
 			t.Fatalf("local INVITE rejected with SIP status %d", rejected.Res.StatusCode)
-		}
-		if errors.Is(err, context.DeadlineExceeded) {
+		case errors.Is(err, syscall.EADDRINUSE):
+			t.Fatal("local INVITE socket bind collided")
+		case errors.Is(err, sip.ErrTransactionTransport):
+			t.Fatal("local INVITE transport failed")
+		case errors.Is(err, context.DeadlineExceeded), errors.Is(err, sip.ErrTransactionTimeout):
 			t.Fatal("local INVITE timed out")
+		default:
+			t.Fatalf("local INVITE failed (%T)", err) // never print SIP/SDP or a remote response
 		}
-		t.Fatalf("local INVITE failed (%T)", err) // never print SIP/SDP or a remote response
 	}
 	t.Cleanup(func() { _ = dialog.Close() })
 	return dialog
@@ -110,7 +115,7 @@ func awaitIdle(t *testing.T, m *Service) {
 
 func TestNormalCallAndBye(t *testing.T) {
 	m, sink, ctx := start(t, nil, time.Second, 2*time.Second)
-	d := peer(t, ctx)
+	d := peer(t)
 	callCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	dialog := invite(t, d, callCtx, m.config.Port, "desk")
@@ -131,7 +136,7 @@ func TestNormalCallAndBye(t *testing.T) {
 func TestBusyAndWrongDestination(t *testing.T) {
 	gate := make(chan struct{})
 	m, sink, ctx := start(t, gate, 2*time.Second, 2*time.Second)
-	d := peer(t, ctx)
+	d := peer(t)
 	callCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	first, err := d.NewDialog(sip.Uri{User: "desk", Host: "127.0.0.1", Port: m.config.Port}, diago.NewDialogOptions{})
@@ -171,7 +176,7 @@ func TestBusyAndWrongDestination(t *testing.T) {
 func TestCancelBeforeAnswer(t *testing.T) {
 	gate := make(chan struct{})
 	m, sink, ctx := start(t, gate, 2*time.Second, 2*time.Second)
-	d := peer(t, ctx)
+	d := peer(t)
 	callCtx, cancelCall := context.WithTimeout(ctx, 4*time.Second)
 	defer cancelCall()
 	dialog, err := d.NewDialog(sip.Uri{User: "desk", Host: "127.0.0.1", Port: m.config.Port}, diago.NewDialogOptions{})
@@ -211,7 +216,7 @@ func TestCancelBeforeAnswer(t *testing.T) {
 func TestOfferTimeout(t *testing.T) {
 	gate := make(chan struct{})
 	m, sink, ctx := start(t, gate, 80*time.Millisecond, time.Second)
-	d := peer(t, ctx)
+	d := peer(t)
 	callCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	_, err := d.Invite(callCtx, sip.Uri{User: "desk", Host: "127.0.0.1", Port: m.config.Port}, diago.InviteOptions{})
@@ -227,7 +232,7 @@ func TestOfferTimeout(t *testing.T) {
 
 func TestCallDurationAndUnsupportedMethods(t *testing.T) {
 	m, sink, ctx := start(t, nil, time.Second, 120*time.Millisecond)
-	d := peer(t, ctx)
+	d := peer(t)
 	callCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	dialog := invite(t, d, callCtx, m.config.Port, "desk")
@@ -279,7 +284,7 @@ func TestACKTimeoutConfigBoundaries(t *testing.T) {
 
 func TestACKJustBeforeDeadlineKeepsCallAlive(t *testing.T) {
 	m, events, ctx := start(t, nil, 500*time.Millisecond, 500*time.Millisecond)
-	d := peer(t, ctx)
+	d := peer(t)
 	callCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	dialog, err := d.NewDialog(sip.Uri{User: "desk", Host: "127.0.0.1", Port: m.config.Port}, diago.NewDialogOptions{})
@@ -342,7 +347,7 @@ func TestInboundTargetCannotChangeURIOrInject(t *testing.T) {
 
 func TestUnresponsiveEventConsumerFailsClosed(t *testing.T) {
 	m, events, ctx := start(t, nil, time.Second, time.Second)
-	d := peer(t, ctx)
+	d := peer(t)
 	callCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	first := invite(t, d, callCtx, m.config.Port, "desk")
@@ -425,7 +430,7 @@ func TestNoACKDeadlineClosesWorkerSockets(t *testing.T) {
 	if err != nil || line != "READY\n" {
 		t.Fatal("local worker did not reach SIP readiness")
 	}
-	d := peer(t, ctx)
+	d := peer(t)
 	dialog, err := d.NewDialog(sip.Uri{User: "desk", Host: "127.0.0.1", Port: port}, diago.NewDialogOptions{})
 	if err != nil {
 		t.Fatal(err)
