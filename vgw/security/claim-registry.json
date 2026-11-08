@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "claims": [
+    {
+      "path": "vgw/security/claims/ari-peer.v2.json",
+      "resources": [
+        "vgw/security/claims/ari-peer.feature"
+      ]
+    }
+  ]
+}
