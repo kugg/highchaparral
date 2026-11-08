@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"example.com/ata/voip-gateway/internal/asterisk"
+	"example.com/ata/voip-gateway/internal/serviceconfig"
 	"github.com/pion/rtp"
 )
 
@@ -144,8 +146,12 @@ func checkBridgeDuringWindow(ctx context.Context, read func(context.Context) (st
 func run(ctx context.Context, controlOnly bool) (result error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	peer, err := serviceconfig.ReadLabARIPeerCertificate(*peerPath)
+	if err != nil {
+		return errors.New("ARI peer provisioning unavailable")
+	}
 	client, err := asterisk.New(asterisk.Config{
-		BaseURL: "http://127.0.0.1:8088", Username: os.Getenv("GATEWAY_LAB_ARI_USER"),
+		BaseURL: fmt.Sprintf("https://127.0.0.1:%d", *ariPort), PeerCertificate: peer, Username: os.Getenv("GATEWAY_LAB_ARI_USER"),
 		Password: os.Getenv("GATEWAY_LAB_ARI_PASSWORD"), Timeout: 2 * time.Second,
 	})
 	if err != nil {
@@ -239,6 +245,9 @@ func run(ctx context.Context, controlOnly bool) (result error) {
 }
 
 func main() {
+	peerPath := flag.String("ari-peer-cert", "", "absolute owner-controlled public leaf certificate path")
+	ariPort := flag.Int("ari-port", 8089, "local IPv4-loopback ARI HTTPS port")
+	flag.Parse()
 	controlOnly := flag.Bool("control-only", false, "guest-only ARI bridge lifetime diagnostic; sends no RTP")
 	flag.Parse()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)

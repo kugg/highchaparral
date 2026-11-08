@@ -69,7 +69,11 @@ func run(args []string) string {
 	defer stop()
 	ctx, timeout := context.WithTimeout(ctx, 40*time.Second)
 	defer timeout()
-	client, err := asterisk.New(asterisk.Config{BaseURL: config.ARIBaseURL,
+	peer, err := serviceconfig.ReadARIPeerCertificateWithOptions(options)
+	if err != nil {
+		return "GO_ARI_PEER_REFUSED"
+	}
+	client, err := asterisk.New(asterisk.Config{BaseURL: config.ARIBaseURL, PeerCertificate: peer,
 		Username: config.ARIUser, Password: config.ARIPassword,
 		Timeout: 3 * time.Second, Target: asterisk.BrowserIngress})
 	if err != nil {

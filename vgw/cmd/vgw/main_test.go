@@ -41,7 +41,7 @@ func TestCheckConfigFromRootlessPrivatePathWithoutEtcOrProvider(t *testing.T) {
 		"UPSTREAM_HOST=sip.provider.test\nUPSTREAM_PORT=15061\n" +
 		"UPSTREAM_TLS_NAME=sip.provider.test\nUPSTREAM_USERNAME=synthetic\n" +
 		"UPSTREAM_PASSWORD=unit-only\nUPSTREAM_CERT_SHA256=ca-only\n" +
-		"ARI_BASE_URL=http://127.0.0.1:18088\nSIP_BIND_IPV4=127.0.0.1\nSIP_BIND_PORT=15062\n" +
+		"ARI_BASE_URL=https://127.0.0.1:18088\nSIP_BIND_IPV4=127.0.0.1\nSIP_BIND_PORT=15062\n" +
 		"ERROR_LOG_PATH=" + logPath + "\n"
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil || os.Chmod(path, 0600) != nil {
 		t.Fatal("synthetic rootless config unavailable")
