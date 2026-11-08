@@ -1123,7 +1123,10 @@ func TestLocalARILabCommandAgainstMock(t *testing.T) {
 	port := probe.LocalAddr().(*net.UDPAddr).Port
 	probe.Close()
 	ariPort := strings.TrimPrefix(m.server.URL, "https://127.0.0.1:")
-	peerDir := t.TempDir()
+	peerDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Chmod(peerDir, 0700); err != nil {
 		t.Fatal(err)
 	}
