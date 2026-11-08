@@ -83,7 +83,14 @@ func invite(t *testing.T, d *diago.Diago, ctx context.Context, port int, user st
 	t.Helper()
 	dialog, err := d.Invite(ctx, sip.Uri{User: user, Host: "127.0.0.1", Port: port}, diago.InviteOptions{})
 	if err != nil {
-		t.Fatal("local INVITE failed")
+		var rejected *sipgo.ErrDialogResponse
+		if errors.As(err, &rejected) && rejected.Res != nil {
+			t.Fatalf("local INVITE rejected with SIP status %d", rejected.Res.StatusCode)
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			t.Fatal("local INVITE timed out")
+		}
+		t.Fatalf("local INVITE failed (%T)", err) // never print SIP/SDP or a remote response
 	}
 	t.Cleanup(func() { _ = dialog.Close() })
 	return dialog

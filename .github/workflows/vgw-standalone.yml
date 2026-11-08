@@ -2,13 +2,8 @@ name: VGW standalone Go tests
 
 on:
   push:
-    paths:
-      - 'vgw/**'
-      - '.github/workflows/vgw-standalone.yml'
+    branches: [main]
   pull_request:
-    paths:
-      - 'vgw/**'
-      - '.github/workflows/vgw-standalone.yml'
 
 permissions:
   contents: read

@@ -36,8 +36,10 @@ basename; no passwd/shadow entry or fixed compiled UID is required.
 `ARI_BASE_URL`, SIP bind IPv4/port and optional fixed-category error
 log path come from the strictly parsed config, with legacy defaults.
 See [`docs/configurable-daemon-runtime.md`](docs/configurable-daemon-runtime.md)
-and the redacted [`cmd/literalcheck`](cmd/literalcheck) inventory/CI
-gate. These options do not complete the office voice release.
+and the redacted, manually runnable
+[`cmd/literalcheck`](cmd/literalcheck) inventory. Its package tests
+are part of the full Go suite required for PRs. These options do not
+complete the office voice release.
 
 ## Historical development milestones
 

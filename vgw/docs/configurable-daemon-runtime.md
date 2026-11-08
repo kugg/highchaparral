@@ -81,7 +81,7 @@ the current module bundles the reviewed eight-field template at
 unskipped Go race suite passes in a standalone checkout. This does
 not establish a real Ansible deployment or media call.
 
-## Hardcoded-literal inventory and CI contract
+## Hardcoded-literal inventory and full-suite regression
 
 `go run ./cmd/literalcheck --list` inventories **every Go AST basic
 literal** (strings, numbers and runes) plus Dockerfile `USER`, `EXPOSE`
@@ -98,8 +98,10 @@ counts and a sorted hash of the literal kind, owning function/directive and valu
 digest. `go run ./cmd/literalcheck --check` and the package's test fail
 on new, moved-between-functions, duplicated, removed or unreviewed
 deployment literals.
-CI runs both checks in the public code-test project. Test files and
-the linter's own source appear in the complete list but are not
+The standalone Go suite runs the inventory package's policy/redaction
+tests on every PR; the separate `--list` and `--check` commands remain
+available for manual reviews. Test files and the linter's own source
+appear in the complete list but are not
 deployment defaults; fixed protocol bounds/ownership modes and
 historical one-use lab fixtures have explicit policy reasons.
 
