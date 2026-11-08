@@ -71,6 +71,8 @@ The workflow `.github/workflows/vgw-literals.yml` uses SHA-pinned
 checkout/setup-go actions and runs the redacted inventory, policy
 check and focused race tests on VGW changes. Local pinned `actionlint`
 parsed the workflow; a GitHub check run remains separate verification.
+The root README now distinguishes this lint-only check from an
+unattended security-remediation worker or manual penetration test.
 
 ## Outstanding review gates
 
