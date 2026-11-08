@@ -6,9 +6,15 @@ This repository hosts the VGW penetration-test and remediation demo, alongside t
 
 `vgw/` is imported from the user-designated sanitized source snapshot. [Source provenance and per-file hashes](vgw/DEFENSEFACTORY-SOURCE.json) identify its exact original revision. It is a separate Go module; the root Python dependencies belong to the Flask fixture.
 
+The [VGW browser softphone](vgw/softphone/README.md) is a separately
+packaged source-only companion for WebRTC PBX testing without a hardware
+phone. Its Eventphone route is disabled pending a call-capable gateway and
+owned HTTPS/PBX integration; it is not part of the pinned original gateway
+source snapshot.
+
 The user performs the penetration test. Findings are triaged in [the Defense Factory Linear project](https://linear.app/jerkeby/project/appsec-defense-factory-vgw-demo-20a3edd5d494), then processed through manually invoked Codex skills on the host: intake → assessment → repair → verification → integration → deployment → confirmation → maintenance.
 
-No scheduler or unattended remediation worker is installed for this demo. A scoped GitHub Actions workflow now checks only VGW deployment-literal inventory/policy and its own race tests when `vgw/` changes; it does not deploy, contact a provider or replace the user's manual penetration test. A baseline import is setup, not a remediation. Same-host verification is explicitly a rehearsal until independent identities and controlled acceptance permissions are evidenced. Merge alone does not establish deployed remediation.
+No scheduler or unattended remediation worker is installed for this demo. Scoped GitHub Actions workflows check VGW deployment-literal policy and build/test the softphone source when their paths change; they do not deploy, contact a provider or replace the user's manual penetration test. A baseline import is setup, not a remediation. Same-host verification is explicitly a rehearsal until independent identities and controlled acceptance permissions are evidenced. Merge alone does not establish deployed remediation.
 
 See [VGW testing notes](vgw/DEFENSEFACTORY-TESTING.md) for host commands, known snapshot limitations and safe scope. The full local factory workspace is `~/devel/defensefactory`; reusable skills are installed from its `skills/` directory.
 

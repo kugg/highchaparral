@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VGW browser softphone</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>Browser softphone</h1>
+  <p id="status" role="status" class="status">Not connected</p>
+  <form id="account-form" class="dial-form">
+    <label for="sip-user">PBX SIP extension</label>
+    <input id="sip-user" type="text" inputmode="numeric" pattern="[0-9]{2,6}" maxlength="6" required autocomplete="off">
+    <label for="sip-password">PBX SIP password</label>
+    <input id="sip-password" type="password" maxlength="256" autocomplete="off">
+    <button id="connect" class="primary" type="submit">Connect to PBX</button>
+  </form>
+  <form id="dial-form" class="dial-form">
+    <label for="dial-route">Call through</label>
+    <select id="dial-route">
+      <option value="office">PBX extension</option>
+      <option value="eventphone" disabled>Eventphone (setup pending)</option>
+    </select>
+    <label for="dial-number">Extension</label>
+    <input id="dial-number" type="tel" inputmode="numeric" pattern="[0-9]{2,6}" maxlength="6" required autocomplete="off">
+    <div id="eventphone-byok" class="dial-form" hidden>
+      <p class="hint">Use your own Eventphone SIP identity for this call. Credentials are not saved by the page.</p>
+      <label for="eventphone-user">Eventphone identity</label>
+      <input id="eventphone-user" autocomplete="off" maxlength="64">
+      <label for="eventphone-password">Eventphone SIP password</label>
+      <input id="eventphone-password" type="password" autocomplete="new-password" maxlength="256">
+    </div>
+    <button id="dial-submit" class="primary" type="submit" disabled>Call extension</button>
+  </form>
+  <div class="controls">
+    <button id="accept" class="primary" hidden>Accept</button>
+    <button id="reject" hidden>Reject</button>
+    <button id="mute" disabled>Mute</button>
+    <button id="hangup" disabled>Hang up</button>
+  </div>
+  <audio id="remoteAudio" autoplay></audio>
+  <p id="hint" class="hint"></p>
+</main>
+<script src="vendor/sip.min.js"></script>
+<script src="config.js"></script>
+<script src="dial.js"></script>
+<script src="byok.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
