@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "id": "VGW-BYOK-NONCE-001",
+  "version": 1,
+  "owner": "JER-14",
+  "property": "single-use-nonce-authorization",
+  "approval": "Proposed product-owned specification. Source-verified PASS against the cited commit; no independent reviewer approval or deployed-remediation acceptance is implied.",
+  "scope": "VGW BYOK reservation consume path (browser -> authenticated ARI readback -> provider call)",
+  "obligations": [
+    {
+      "id": "VGW-BYOK-NONCE-001-SEC",
+      "kind": "security",
+      "predicate": "consumed_nonce_implies_authorized_single_call",
+      "checks": [
+        "nonce-replay",
+        "nonce-cross-binding"
+      ]
+    },
+    {
+      "id": "VGW-BYOK-NONCE-001-BUS",
+      "kind": "business",
+      "predicate": "valid_reservation_completes_exactly_one_call",
+      "checks": [
+        "nonce-positive"
+      ]
+    },
+    {
+      "id": "VGW-BYOK-NONCE-001-ARCH",
+      "kind": "architecture",
+      "predicate": "nonce_authoritative_only_from_authenticated_ari_readback",
+      "checks": [
+        "nonce-source-binding"
+      ]
+    }
+  ],
+  "bindings": [
+    "vgw/internal/byok/reservation.go",
+    "vgw/internal/softphone/coordinator.go",
+    "vgw/internal/asterisk/ari.go",
+    "vgw/internal/asterisk/browser_event.go"
+  ],
+  "required_behaviors": [
+    "single_use_consume",
+    "authenticated_readback_binding"
+  ],
+  "prohibited_behaviors": [
+    "nonce_replay",
+    "cross_reservation_grant",
+    "nonce_from_stasis_args"
+  ],
+  "exceptions": [],
+  "invalidation": [
+    "source",
+    "evaluator",
+    "profile",
+    "dependency",
+    "artifact",
+    "configuration",
+    "trust_binding",
+    "target"
+  ],
+  "check_specs_sha256": "4c1cefe55d3ab4871b2fae62617716a406b920b48a2423008d8a4dbb78e2f3ce",
+  "formal": {
+    "required": true,
+    "profile_sha256": "5533aa326b0ad8c90285fe232230d2b709c3ab26b3f588db2dd8b32eb1b6194c",
+    "source_sha256": "0807dd23a93a1d3aaccc743ed2f6b435ed82a9f6789077cffbde7b5fb33488ed",
+    "scope": "Finite property over enumerated bindings; runtime/deployment remain separate obligations."
+  },
+  "evaluator_manifest_sha256": "a45214830b75aecdcf302442be2f45be68230b46e0164adcfa60f36ae26f751f",
+  "covered_occurrences": [],
+  "verification": {
+    "method": "Oplane implementation-advice rubric graded against source",
+    "oplane_threat_model": "44ceda2c-3d35-4859-b079-a0a30f19ebfc",
+    "oplane_requirement": "OPLANE_REQ-00004998",
+    "verdict": "PASS",
+    "git_ref": "3400658fad583b5079ce71141a0559528c859eaf",
+    "evidence": [
+      "reservation.go:169-180 Consume single-use: pending->nil, active=nonce; second Consume rejects",
+      "reservation.go:171-172 constant-time nonce + target match against the single pending reservation",
+      "coordinator.go:63 + ari.go:332-338 the nonce used is dial.Nonce read from the channel X-VGW-Nonce via authenticated ARI",
+      "browser_event.go:88 ParseBrowserStart extracts only ChannelID; nonce never taken from Stasis args"
+    ]
+  },
+  "lineage": [],
+  "required_runtime_evidence": "Actual artifact/configuration/peer/ownership correspondence and supplied E2E journey remain separate verification obligations."
+}

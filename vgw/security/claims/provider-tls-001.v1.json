@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "id": "VGW-PROVIDER-TLS-001",
+  "version": 1,
+  "owner": "JER-15",
+  "property": "provider-tls-and-host-validation",
+  "approval": "Proposed product-owned specification. Source-verified PASS against the cited commit; no independent reviewer approval or deployed-remediation acceptance is implied.",
+  "scope": "vgw provider SIP/TLS connection trust and host allowlist",
+  "obligations": [
+    {
+      "id": "VGW-PROVIDER-TLS-001-SEC",
+      "kind": "security",
+      "predicate": "tls_min12_roots_hostname_and_host_allowlist_enforced",
+      "checks": [
+        "provider-tls-negative"
+      ]
+    },
+    {
+      "id": "VGW-PROVIDER-TLS-001-BUS",
+      "kind": "business",
+      "predicate": "valid_provider_tls_call_proceeds",
+      "checks": [
+        "provider-tls-positive"
+      ]
+    },
+    {
+      "id": "VGW-PROVIDER-TLS-001-ARCH",
+      "kind": "architecture",
+      "predicate": "insecure_skip_verify_structurally_rejected",
+      "checks": [
+        "provider-tls-invariant"
+      ]
+    }
+  ],
+  "bindings": [
+    "vgw/internal/provider/leg.go",
+    "vgw/internal/registration/registration.go",
+    "vgw/internal/serviceconfig/byok.go"
+  ],
+  "required_behaviors": [
+    "min_tls_1_2",
+    "hostname_match",
+    "host_allowlist"
+  ],
+  "prohibited_behaviors": [
+    "tls_downgrade",
+    "insecure_skip_verify",
+    "non_allowlisted_host"
+  ],
+  "exceptions": [],
+  "invalidation": [
+    "source",
+    "evaluator",
+    "profile",
+    "dependency",
+    "artifact",
+    "configuration",
+    "trust_binding",
+    "target"
+  ],
+  "check_specs_sha256": "25f3d6d0902ec101bcdacfff5e16a7af357b7e9ba74996916448ed1ffd609104",
+  "formal": {
+    "required": true,
+    "profile_sha256": "a0b82184f33e84b89e9b059d2082d1cf4c551fe01ff22729768b4feb514d5acd",
+    "source_sha256": "94dae4006e1b6e9fad6ed8721314b9d7914c17e7517294fe902362f55fbb2b9c",
+    "scope": "Finite property over enumerated bindings; runtime/deployment remain separate obligations."
+  },
+  "evaluator_manifest_sha256": "a45214830b75aecdcf302442be2f45be68230b46e0164adcfa60f36ae26f751f",
+  "covered_occurrences": [],
+  "verification": {
+    "method": "Oplane implementation-advice rubric graded against source",
+    "oplane_threat_model": "44ceda2c-3d35-4859-b079-a0a30f19ebfc",
+    "oplane_requirement": "OPLANE_REQ-00005002",
+    "verdict": "PASS",
+    "git_ref": "3400658fad583b5079ce71141a0559528c859eaf",
+    "evidence": [
+      "leg.go:109-111 MinVersion TLS1.2, system roots, ServerName=TLSName",
+      "leg.go:94-95 production guard Host==hg.eventphone.de AND TLSName==Host AND non-loopback bind",
+      "registration.go:56-59 InsecureSkipVerify rejected",
+      "serviceconfig/byok.go:83 BYOK forced ca-only"
+    ]
+  },
+  "lineage": [],
+  "required_runtime_evidence": "Actual artifact/configuration/peer/ownership correspondence and supplied E2E journey remain separate verification obligations."
+}

@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "id": "VGW-BYOK-STATE-001",
+  "version": 1,
+  "owner": "JER-14",
+  "property": "byok-atomic-state-transitions",
+  "approval": "Proposed product-owned specification. Source-verified PASS against the cited commit; no independent reviewer approval or deployed-remediation acceptance is implied.",
+  "scope": "BYOK reservation state machine: reserve -> consume -> complete under concurrency",
+  "obligations": [
+    {
+      "id": "VGW-BYOK-STATE-001-SEC",
+      "kind": "security",
+      "predicate": "atomic_consume_prevents_double_spend_and_toctou",
+      "checks": [
+        "state-consume-atomic",
+        "state-toctou"
+      ]
+    },
+    {
+      "id": "VGW-BYOK-STATE-001-BUS",
+      "kind": "business",
+      "predicate": "one_call_completes_and_releases_slot",
+      "checks": [
+        "state-positive"
+      ]
+    },
+    {
+      "id": "VGW-BYOK-STATE-001-ARCH",
+      "kind": "architecture",
+      "predicate": "fail_closed_on_ambiguous_teardown",
+      "checks": [
+        "state-failclosed"
+      ]
+    }
+  ],
+  "bindings": [
+    "vgw/internal/byok/reservation.go",
+    "vgw/internal/softphone/coordinator.go"
+  ],
+  "required_behaviors": [
+    "atomic_consume",
+    "fail_closed_teardown"
+  ],
+  "prohibited_behaviors": [
+    "double_spend",
+    "toctou_grant",
+    "auto_release_on_ambiguous"
+  ],
+  "exceptions": [],
+  "invalidation": [
+    "source",
+    "evaluator",
+    "profile",
+    "dependency",
+    "artifact",
+    "configuration",
+    "trust_binding",
+    "target"
+  ],
+  "check_specs_sha256": "de3d777a1dd19b16f873a767c83eb7dc34db834bcc8151fc9328db4f94f3d3ab",
+  "formal": {
+    "required": true,
+    "profile_sha256": "51ef873cbcee6bbec3417ae1a3caed4016a03a8db40f37938e5d8f839967360f",
+    "source_sha256": "0a0bb080024f270f00884f627379b2ab05d6b987ecd8d0dcc33bd494b1b47a61",
+    "scope": "Finite property over enumerated bindings; runtime/deployment remain separate obligations."
+  },
+  "evaluator_manifest_sha256": "a45214830b75aecdcf302442be2f45be68230b46e0164adcfa60f36ae26f751f",
+  "covered_occurrences": [],
+  "verification": {
+    "method": "Oplane implementation-advice rubric graded against source",
+    "oplane_threat_model": "44ceda2c-3d35-4859-b079-a0a30f19ebfc",
+    "oplane_requirement": "OPLANE_REQ-00005005",
+    "verdict": "PASS",
+    "git_ref": "3400658fad583b5079ce71141a0559528c859eaf",
+    "evidence": [
+      "reservation.go:163-180 Consume atomic under s.mu; sets active, clears pending",
+      "coordinator.go:52-63 readback is validation; Consume is the authoritative atomic gate",
+      "reservation.go:178-179 second Consume fails (active set) -> single provider INVITE",
+      "reservation.go:186-193 Complete fail-closed; ambiguous leaves active set for reconciliation"
+    ]
+  },
+  "lineage": [],
+  "required_runtime_evidence": "Actual artifact/configuration/peer/ownership correspondence and supplied E2E journey remain separate verification obligations."
+}

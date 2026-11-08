@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "checks": [
+    {
+      "id": "nonce-replay",
+      "requirements": "Second use of a consumed nonce is rejected; nonce marked consumed on first use",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "nonce-cross-binding",
+      "requirements": "Nonce not accepted for a different reservation/destination than bound",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "nonce-positive",
+      "requirements": "A valid single-use reservation completes exactly one authorized call",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "nonce-source-binding",
+      "requirements": "Authoritative nonce comes only from authenticated ARI channel readback, never Stasis args",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "cred-redaction",
+      "requirements": "Credential never appears in any log/stringification",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "cred-sip-absence",
+      "requirements": "Provider password never present in any browser SIP message/header",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "cred-ari-absence",
+      "requirements": "Provider password never written to or readable via ARI channel variables",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "cred-positive",
+      "requirements": "Provider call completes with the password transmitted only over SIP/TLS",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "cred-zeroization",
+      "requirements": "Credential and request buffers zeroized after use",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "origin-mismatch-reject",
+      "requirements": "POST with mismatched/missing Origin vs Host is rejected unprocessed",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "client-header-reject",
+      "requirements": "POST missing or incorrect X-VGW-Client is rejected unprocessed",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "origin-positive",
+      "requirements": "Legitimate same-origin HTTPS reservation is accepted",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "socket-perms",
+      "requirements": "Unix socket is 0600 owner-only with uid/gid+nlink verified; stale refused",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "ari-loopback-pin",
+      "requirements": "ARI target hard-pinned to 127.0.0.1 tcp4; non-loopback/IPv6 refused",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "stasis-event-validation",
+      "requirements": "Stasis app/context/channel-regex/ext/nonce/arg validated; others rejected",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "stasis-positive",
+      "requirements": "A fully valid Stasis browser event is admitted",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "ari-boundary",
+      "requirements": "All callers use one canonical authenticated loopback ARI constructor; no downgrade",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "provider-tls-negative",
+      "requirements": "TLS<1.2, bad-root, hostname-mismatch, non-allowlisted host rejected",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "provider-tls-positive",
+      "requirements": "Valid provider TLS call proceeds",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "provider-tls-invariant",
+      "requirements": "InsecureSkipVerify structurally rejected; checks cannot be disabled",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "sdp-rtp-negative",
+      "requirements": "Private/loopback/multicast/unspecified RTP and non-PCMA/multi-codec rejected",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "sdp-rtp-positive",
+      "requirements": "Valid public single PCMA answer accepted",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "sdp-source-match",
+      "requirements": "RTP packets from a source not matching SDP address are rejected",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "state-consume-atomic",
+      "requirements": "Consume is atomic under lock; no double-spend of a reservation",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "state-toctou",
+      "requirements": "No TOCTOU grant between readback and consume; expiry/consumed re-checked",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "state-positive",
+      "requirements": "One call completes and releases the slot",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    },
+    {
+      "id": "state-failclosed",
+      "requirements": "Ambiguous teardown leaves slot blocked for explicit reconciliation",
+      "state": "source_verified_pass (graded against commit 3400658f); runtime/E2E evidence_pending",
+      "resource": "Oplane threat model 44ceda2c-3d35-4859-b079-a0a30f19ebfc implementation-advice rubric + source review"
+    }
+  ],
+  "approval": "Proposed evaluator requirements; source-verified PASS is not runtime/deployed acceptance."
+}

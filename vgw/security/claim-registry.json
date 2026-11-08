@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "claims": [
+    {
+      "path": "vgw/security/claims/byok-nonce-001.v1.json",
+      "resources": [
+        "vgw/security/claims/byok-nonce-001.feature",
+        "vgw/security/evaluator-requirements.json"
+      ]
+    },
+    {
+      "path": "vgw/security/claims/byok-cred-001.v1.json",
+      "resources": [
+        "vgw/security/claims/byok-cred-001.feature",
+        "vgw/security/evaluator-requirements.json"
+      ]
+    },
+    {
+      "path": "vgw/security/claims/byok-origin-001.v1.json",
+      "resources": [
+        "vgw/security/claims/byok-origin-001.feature",
+        "vgw/security/evaluator-requirements.json"
+      ]
+    },
+    {
+      "path": "vgw/security/claims/ari-admission-001.v1.json",
+      "resources": [
+        "vgw/security/claims/ari-admission-001.feature",
+        "vgw/security/evaluator-requirements.json"
+      ]
+    },
+    {
+      "path": "vgw/security/claims/provider-tls-001.v1.json",
+      "resources": [
+        "vgw/security/claims/provider-tls-001.feature",
+        "vgw/security/evaluator-requirements.json"
+      ]
+    },
+    {
+      "path": "vgw/security/claims/provider-sdp-001.v1.json",
+      "resources": [
+        "vgw/security/claims/provider-sdp-001.feature",
+        "vgw/security/evaluator-requirements.json"
+      ]
+    },
+    {
+      "path": "vgw/security/claims/byok-state-001.v1.json",
+      "resources": [
+        "vgw/security/claims/byok-state-001.feature",
+        "vgw/security/evaluator-requirements.json"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "id": "VGW-BYOK-CRED-001",
+  "version": 1,
+  "owner": "JER-14",
+  "property": "provider-credential-confidentiality",
+  "approval": "Proposed product-owned specification. Source-verified PASS against the cited commit; no independent reviewer approval or deployed-remediation acceptance is implied.",
+  "scope": "Provider (Eventphone) BYOK password across reservation, ARI, SIP and logging",
+  "obligations": [
+    {
+      "id": "VGW-BYOK-CRED-001-SEC",
+      "kind": "security",
+      "predicate": "credential_never_reaches_logs_sip_ari_or_errors",
+      "checks": [
+        "cred-redaction",
+        "cred-sip-absence",
+        "cred-ari-absence"
+      ]
+    },
+    {
+      "id": "VGW-BYOK-CRED-001-BUS",
+      "kind": "business",
+      "predicate": "provider_call_completes_with_tls_only_password",
+      "checks": [
+        "cred-positive"
+      ]
+    },
+    {
+      "id": "VGW-BYOK-CRED-001-ARCH",
+      "kind": "architecture",
+      "predicate": "credential_memory_zeroized_after_use",
+      "checks": [
+        "cred-zeroization"
+      ]
+    }
+  ],
+  "bindings": [
+    "vgw/internal/byok/reservation.go",
+    "vgw/internal/softphone/coordinator.go",
+    "vgw/internal/provider/leg.go"
+  ],
+  "required_behaviors": [
+    "redacted_stringification",
+    "zeroize_after_use"
+  ],
+  "prohibited_behaviors": [
+    "password_in_log",
+    "password_in_sip",
+    "password_in_ari_var",
+    "password_in_error"
+  ],
+  "exceptions": [],
+  "invalidation": [
+    "source",
+    "evaluator",
+    "profile",
+    "dependency",
+    "artifact",
+    "configuration",
+    "trust_binding",
+    "target"
+  ],
+  "check_specs_sha256": "5f11470177eea67cc0dd2517eb227c2d9dffdccec198c09a9f7e8ddb652115b8",
+  "formal": {
+    "required": true,
+    "profile_sha256": "00f24433592df85f827e1ca0d52bec75eccc307c2b486d1c93e98db2db13cb89",
+    "source_sha256": "de5d8202e4f4ab8df49e6ae0d4837a96c11f68f21736a72e5ca03bea6bb50c45",
+    "scope": "Finite property over enumerated bindings; runtime/deployment remain separate obligations."
+  },
+  "evaluator_manifest_sha256": "a45214830b75aecdcf302442be2f45be68230b46e0164adcfa60f36ae26f751f",
+  "covered_occurrences": [],
+  "verification": {
+    "method": "Oplane implementation-advice rubric graded against source",
+    "oplane_threat_model": "44ceda2c-3d35-4859-b079-a0a30f19ebfc",
+    "oplane_requirement": "OPLANE_REQ-00004999",
+    "verdict": "PASS",
+    "git_ref": "3400658fad583b5079ce71141a0559528c859eaf",
+    "evidence": [
+      "reservation.go:49-56 Credentials redacts String/GoString/LogValue and refuses MarshalJSON",
+      "reservation.go:58-63,123,138,142,175-176 password and request body zeroed after use",
+      "coordinator.go:67 defer creds.Clear()",
+      "ari.go:332 readback reads only X-VGW-Nonce; password never written to ARI",
+      "leg.go provider password used only for SIP/TLS digest auth"
+    ]
+  },
+  "lineage": [],
+  "required_runtime_evidence": "Actual artifact/configuration/peer/ownership correspondence and supplied E2E journey remain separate verification obligations."
+}
