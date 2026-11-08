@@ -23,3 +23,6 @@ jobs:
       - name: Exercise complete standalone module (including Ansible contract)
         working-directory: vgw
         run: go test -race -count=1 -timeout=120s ./...
+      - name: Detect intermittent synthetic loopback INVITE failures (JER-23)
+        working-directory: vgw
+        run: go test -race -count=200 -timeout=120s -run '^TestNormalCallAndBye$' ./internal/calls
