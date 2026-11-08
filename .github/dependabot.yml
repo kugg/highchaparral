@@ -29,6 +29,28 @@ updates:
           - "minor"
           - "patch"
 
+  # Go module (CI build tools: govulncheck) — keeps the pinned scanner current
+  - package-ecosystem: "gomod"
+    directory: "/tools"
+    schedule:
+      interval: "daily"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps(tools)"
+    labels:
+      - "dependencies"
+      - "go"
+      - "ci"
+    groups:
+      tools-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
   # npm (browser softphone)
   - package-ecosystem: "npm"
     directory: "/vgw/softphone"
