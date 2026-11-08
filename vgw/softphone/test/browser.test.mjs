@@ -4,11 +4,13 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
-const chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chrome = process.env.CHROME_EXECUTABLE || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const site = new URL("../site/", import.meta.url);
 const source = (file) => readFileSync(fileURLToPath(new URL(file, site)), "utf8");
 const bundled = fileURLToPath(new URL("vendor/sip.min.js", site));
 const available = existsSync(chrome) && existsSync(bundled);
+const required = process.env.SOFTPHONE_REQUIRE_BROWSER === "1";
+const skip = !required && !available;
 
 async function pageWithSIP(context, enabled = false) {
   const page = await context.newPage();
@@ -54,7 +56,8 @@ async function pageWithSIP(context, enabled = false) {
   return page;
 }
 
-test("built page connects to PBX and places a numeric extension call", { skip: !available }, async () => {
+test("built page connects to PBX and places a numeric extension call", { skip }, async () => {
+  assert.ok(available, "required Chrome and SIP.js bundle unavailable");
   const browser = await chromium.launch({ executablePath: chrome, headless: true,
     args: ["--disable-background-networking", "--no-first-run"] });
   try {
@@ -79,7 +82,8 @@ test("built page connects to PBX and places a numeric extension call", { skip: !
   } finally { await browser.close(); }
 });
 
-test("BYOK keeps provider password out of SIP and ignores injected server response", { skip: !available }, async () => {
+test("BYOK keeps provider password out of SIP and ignores injected server response", { skip }, async () => {
+  assert.ok(available, "required Chrome and SIP.js bundle unavailable");
   const seen = [];
   let refuse = false;
   const browser = await chromium.launch({ executablePath: chrome, headless: true,
