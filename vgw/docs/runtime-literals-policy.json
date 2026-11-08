@@ -1,7 +1,7 @@
 {
   "version": 1,
   "allow": [
-    {"file":"internal/serviceconfig/ari_peer.go","sha256":"293508b513ce75c998946335e7b5b574f23e4f532f3a719c4dac74eba3282ecb","classification":"default","reason":"public leaf filename derived beside trusted runtime config; proposed JER-13 provisioning","count":1},
+    {"file":"internal/serviceconfig/ari_peer.go","sha256":"293508b513ce75c998946335e7b5b574f23e4f532f3a719c4dac74eba3282ecb","classification":"default","reason":"public leaf filename derived beside trusted runtime config for authenticated ari","count":1},
     {"file":"Dockerfile.noll","sha256":"6dda16739f586b0e50aa3e2594d03850512c79adbfb6091676b49cd9cb35fdb5","classification":"default","reason":"unprivileged image default user and no fixed daemon uid","count":1},
     {"file":"cmd/ari-media-probe/main.go","sha256":"09b4be53737d9e1879246de88dfbc45d75452ce92c1b73fc92e06dc134cd365c","classification":"historical-fixture","reason":"isolated ari media lab port and response bounds","count":5},
     {"file":"cmd/ari-probe/main.go","sha256":"11c1d07e5301bbee4d9b01bbbc52d9c9905df8067bcced37079c89088a15d739","classification":"historical-fixture","reason":"isolated ari connectivity lab port","count":2},
