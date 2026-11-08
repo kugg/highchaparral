@@ -50,9 +50,28 @@ func onlySourceAddress(ctx context.Context, host string, port uint16) (string, e
 	return "", errors.New("reviewed registrar source address unavailable")
 }
 
-func run(args []string, out io.Writer) error {
+func selectedBindIPv4(selected, override string) (string, error) {
+	if override == "" {
+		return selected, nil
+	}
+	ip := net.ParseIP(override)
+	if ip == nil || ip.To4() == nil || ip.IsUnspecified() || ip.IsMulticast() {
+		return "", errors.New("invalid local SIP bind address")
+	}
+	// Bind and immediately close a packet-free socket to prove the
+	// configured IPv4 address belongs to this host before SIP traffic.
+	probe, err := net.ListenUDP("udp4", &net.UDPAddr{IP: ip.To4()})
+	if err != nil {
+		return "", errors.New("unowned local SIP bind address")
+	}
+	_ = probe.Close()
+	return ip.To4().String(), nil
+}
+
+func run(args []string, out io.Writer) (runErr error) {
 	flags := flag.NewFlagSet("vgw", flag.ContinueOnError)
 	flags.SetOutput(io.Discard) // never reflect an argv string containing a credential
+	runtimeFlags := serviceconfig.BindRuntimeFlags(flags, serviceconfig.DefaultRuntimeOptions())
 	check := flags.Bool("check-config", false, "verify fixed service config without contacting provider")
 	serve := flags.Bool("serve", false, "register with reviewed upstream SIP/TLS provider")
 	byok := flags.Bool("serve-byok", false, "run one-at-a-time browser BYOK softphone service")
@@ -62,6 +81,14 @@ func run(args []string, out io.Writer) error {
 	if flags.Parse(args) != nil || flags.NArg() != 0 ||
 		(boolInt(*check)+boolInt(*serve)+boolInt(*byok)+boolInt(*testCheck)+boolInt(*testOnce)+boolInt(*testStatus) > 1) {
 		return errors.New("unsupported vgw operation; no network used")
+	}
+	defaultPath := serviceconfig.Path
+	if *byok {
+		defaultPath = serviceconfig.BYOKPath
+	}
+	options, err := runtimeFlags.OptionsFor(defaultPath)
+	if err != nil {
+		return errors.New("invalid trusted vgw runtime options; no network used")
 	}
 	if *testStatus {
 		return reportTestRegisterStatus(out)
@@ -77,9 +104,9 @@ func run(args []string, out io.Writer) error {
 		return nil
 	}
 	if *byok {
-		return runBYOK(out)
+		return runBYOK(out, options)
 	}
-	c, err := serviceconfig.Read() // always /etc/voip-gateway/config, no env or argv secret
+	c, err := serviceconfig.ReadWithOptions(options) // trusted --config, private owner checks before parsing
 	if err != nil {
 		return errors.New("owner-private vgw config unavailable")
 	}
@@ -94,11 +121,40 @@ func run(args []string, out io.Writer) error {
 		_, _ = fmt.Fprintln(out, "vgw private config/CA/hostname/TLS policy syntax PASS; no network used")
 		return nil
 	}
+	logFile, err := serviceconfig.OpenErrorLog(c.ErrorLogPath, options.UID, options.GID)
+	if err != nil {
+		return errors.New("owner-only vgw error log unavailable")
+	}
+	if logFile != nil {
+		defer func() {
+			category := "VGW_SERVICE_STOPPED"
+			if runErr != nil {
+				category = "VGW_SERVICE_REFUSED"
+			}
+			if serviceconfig.WriteLogCategory(logFile, category) != nil && runErr == nil {
+				runErr = errors.New("bounded vgw error log unavailable")
+			}
+			_ = logFile.Close()
+		}()
+	}
+	closePID, err := serviceconfig.OpenPIDFile(options)
+	if err != nil {
+		return errors.New("owned vgw PID file unavailable")
+	}
+	defer func() {
+		if closePID() != nil && runErr == nil {
+			runErr = errors.New("owned vgw PID file cleanup incomplete")
+		}
+	}()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	local, err := onlySourceAddress(ctx, c.UpstreamHost, c.UpstreamPort)
 	if err != nil {
 		return errors.New("vgw local registrar source address unavailable")
+	}
+	local, err = selectedBindIPv4(local, c.BindIPv4)
+	if err != nil {
+		return errors.New("reviewed SIP bind address unavailable")
 	}
 	// Only REGISTER/refresh/unregister is present. No INVITE/voice/provider
 	// call can be triggered by this entry point; release gate stays closed.
@@ -107,9 +163,15 @@ func run(args []string, out io.Writer) error {
 		// provider's successful REGISTER response. The deploy stage owns
 		// the output file and must check the process is still alive.
 		_, err := fmt.Fprintln(out, "VGW_REGISTER_ACCEPTED")
+		if err == nil {
+			err = serviceconfig.WriteLogCategory(logFile, "VGW_REGISTER_ACCEPTED")
+		}
 		return err
 	}, func() error {
 		_, err := fmt.Fprintln(out, "VGW_REGISTER_REFRESHED")
+		if err == nil {
+			err = serviceconfig.WriteLogCategory(logFile, "VGW_REGISTER_REFRESHED")
+		}
 		return err
 	}); err != nil {
 		return errors.New("vgw registration unavailable; no call retry")

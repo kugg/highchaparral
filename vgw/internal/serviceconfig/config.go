@@ -12,7 +12,6 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"os/user"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -50,6 +49,10 @@ type Config struct {
 	UpstreamPassword string
 	CertSHA256       [sha256.Size]byte // SHA256 of the DER-encoded leaf cert.
 	CAOnly           bool              // explicit "ca-only" policy, never an implicit missing pin.
+	ARIBaseURL       string
+	BindIPv4         string
+	BindPort         uint16
+	ErrorLogPath     string
 }
 
 func (Config) String() string { return "voip-gateway configuration [redacted]" }
@@ -82,8 +85,9 @@ func validHost(host string) bool {
 }
 
 // Parse treats the config as DATA, never as an executable shell env file.
-// Exactly eight fixed keys are required. Values are one bounded printable
-// ASCII line each; upstream passwords may include '=' because SplitN is used.
+// Eight fixed keys are required; four bounded runtime values are optional
+// for compatibility with the old reviewed profile. Provider passwords may
+// include '=' because Cut splits only the first equals sign.
 func Parse(raw []byte) (Config, error) {
 	var result Config
 	if len(raw) < 140 || len(raw) > maxBytes || bytes.IndexAny(raw, "\r\x00") >= 0 {
@@ -94,7 +98,7 @@ func Parse(raw []byte) (Config, error) {
 		return result, reject()
 	}
 	items := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
-	if len(items) != len(keys) {
+	if len(items) < len(keys) || len(items) > len(keys)+4 {
 		return result, reject()
 	}
 	values := make(map[string]string, len(keys))
@@ -107,6 +111,8 @@ func Parse(raw []byte) (Config, error) {
 		for _, key := range keys {
 			allowed = allowed || key == name
 		}
+		allowed = allowed || name == "ARI_BASE_URL" || name == "SIP_BIND_IPV4" ||
+			name == "SIP_BIND_PORT" || name == "ERROR_LOG_PATH"
 		if !allowed || values[name] != "" || len(value) > 256 {
 			return result, reject()
 		}
@@ -135,6 +141,19 @@ func Parse(raw []byte) (Config, error) {
 		}
 		copy(result.CertSHA256[:], pin)
 	}
+	baseURL := DefaultARIBaseURL
+	if values["ARI_BASE_URL"] != "" {
+		baseURL = values["ARI_BASE_URL"]
+	}
+	if !validARIURL(baseURL) {
+		return result, reject()
+	}
+	bindPort, err := parseBindPort(values["SIP_BIND_PORT"])
+	if err != nil || (values["SIP_BIND_IPV4"] != "" &&
+		(net.ParseIP(values["SIP_BIND_IPV4"]) == nil || net.ParseIP(values["SIP_BIND_IPV4"]).To4() == nil)) ||
+		(values["ERROR_LOG_PATH"] != "" && !validAbs(values["ERROR_LOG_PATH"])) {
+		return result, reject()
+	}
 	result.ARIUser = values["ARI_USER"]
 	result.ARIPassword = values["ARI_PASSWORD"]
 	result.UpstreamHost = values["UPSTREAM_HOST"]
@@ -142,6 +161,10 @@ func Parse(raw []byte) (Config, error) {
 	result.UpstreamTLSName = values["UPSTREAM_TLS_NAME"]
 	result.UpstreamUsername = values["UPSTREAM_USERNAME"]
 	result.UpstreamPassword = values["UPSTREAM_PASSWORD"]
+	result.ARIBaseURL = baseURL
+	result.BindIPv4 = values["SIP_BIND_IPV4"]
+	result.BindPort = bindPort
+	result.ErrorLogPath = values["ERROR_LOG_PATH"]
 	return result, nil
 }
 
@@ -153,43 +176,61 @@ func owned(info os.FileInfo, uid, gid uint32, mode os.FileMode, regular bool) bo
 			(!regular && info.IsDir()))
 }
 
-// Read uses a service-named, fixed path, never an environment-supplied
-// location. The directory/file must be root:vgw, 0750/0640, with
-// no symlink or hardlink; validation is repeated on the opened inode.
-func Read() (Config, error) {
-	var empty Config
-	group, err := user.LookupGroup(GroupName)
+// readProtected accepts either the legacy root:selected-group 0750/0640
+// pair or a rootless selected-user 0700/0600 pair under trusted parents.
+// Private config bytes never select their own file path or owner.
+func readProtected(path string, uid, gid uint32, max int) ([]byte, error) {
+	directory := filepath.Dir(path)
+	if !TrustedAncestors(directory, uid) {
+		return nil, reject()
+	}
+	dir, err := os.Lstat(directory)
+	if err != nil || (!owned(dir, 0, gid, 0750, false) && !owned(dir, uid, gid, 0700, false)) {
+		return nil, reject()
+	}
+	entry, err := os.Lstat(path)
 	if err != nil {
-		return empty, reject()
+		return nil, reject()
 	}
-	parsed, err := strconv.ParseUint(group.Gid, 10, 32)
+	rootManaged := owned(dir, 0, gid, 0750, false) && owned(entry, 0, gid, 0640, true)
+	selfManaged := owned(dir, uid, gid, 0700, false) && owned(entry, uid, gid, 0600, true)
+	if (!rootManaged && !selfManaged) || entry.Size() > int64(max) {
+		return nil, reject()
+	}
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
-		return empty, reject()
+		return nil, reject()
 	}
-	gid := uint32(parsed)
-	if filepath.Clean(Path) != Path {
-		return empty, reject()
+	defer file.Close()
+	opened, err := file.Stat()
+	currentDir, dirErr := os.Lstat(directory)
+	if err != nil || dirErr != nil || !os.SameFile(dir, currentDir) ||
+		!TrustedAncestors(directory, uid) || !os.SameFile(entry, opened) ||
+		(rootManaged && !owned(opened, 0, gid, 0640, true)) ||
+		(selfManaged && !owned(opened, uid, gid, 0600, true)) || opened.Size() > int64(max) {
+		return nil, reject()
 	}
-	dir, err := os.Lstat(Directory)
-	if err != nil || !owned(dir, 0, gid, 0750, false) {
-		return empty, reject()
+	raw, err := io.ReadAll(io.LimitReader(file, int64(max)+1))
+	if err != nil || len(raw) > max {
+		return nil, reject()
 	}
-	entry, err := os.Lstat(Path)
-	if err != nil || !owned(entry, 0, gid, 0640, true) || entry.Size() > maxBytes {
-		return empty, reject()
+	return raw, nil
+}
+
+// ReadWithOptions uses a trusted supervisor-selected path and GID.
+// Private config bytes can never select their own owner or location.
+func ReadWithOptions(options RuntimeOptions) (Config, error) {
+	if !options.Valid() || options.UID != uint32(os.Geteuid()) || options.GID != uint32(os.Getegid()) {
+		return Config{}, reject()
 	}
-	fd, err := os.OpenFile(Path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	raw, err := readProtected(options.ConfigPath, options.UID, options.GID, maxBytes)
 	if err != nil {
-		return empty, reject()
-	}
-	defer fd.Close()
-	opened, err := fd.Stat()
-	if err != nil || !os.SameFile(entry, opened) || !owned(opened, 0, gid, 0640, true) || opened.Size() > maxBytes {
-		return empty, reject()
-	}
-	raw, err := io.ReadAll(io.LimitReader(fd, maxBytes+1))
-	if err != nil || len(raw) > maxBytes {
-		return empty, reject()
+		return Config{}, err
 	}
 	return Parse(raw)
+}
+
+// Read retains the historical defaults for reviewed deployments.
+func Read() (Config, error) {
+	return ReadWithOptions(DefaultRuntimeOptions())
 }

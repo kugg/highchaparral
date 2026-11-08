@@ -19,6 +19,8 @@ COPY --from=build /out/vgw /usr/local/bin/vgw
 COPY --from=build /out/local-ari-lab /usr/local/bin/local-ari-lab
 LABEL org.opencontainers.image.title="noll-vgw-development" \
       org.opencontainers.image.description="REGISTER-only vgw and synthetic local ARI lab; no office call service"
-USER 34567:34567
+# Development dry run never requires a service-specific passwd/shadow entry.
+# An owned deployment explicitly selects its runtime UID:GID at launch.
+USER nobody
 ENTRYPOINT ["/usr/local/bin/vgw"]
 # The entrypoint without flags is a network-free dry run.

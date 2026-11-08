@@ -7,7 +7,9 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strconv"
@@ -16,17 +18,28 @@ import (
 	"example.com/ata/voip-gateway/internal/serviceconfig"
 )
 
-func check() string {
-	if len(os.Args) != 1 || os.Geteuid() != 34568 || os.Getegid() != 34568 {
+func check(args []string) string {
+	flags := flag.NewFlagSet("vgw-office-check", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	runtimeFlags := serviceconfig.BindRuntimeFlags(flags, serviceconfig.DefaultOfficeRuntimeOptions())
+	noNetwork := flags.Bool("no-network", false, "check private account ownership/shape without provider contact")
+	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return "OFFICE_GO_IDENTITY_REFUSED"
 	}
-	account, err := serviceconfig.ReadOffice()
+	options, err := runtimeFlags.Options()
+	if err != nil || uint32(os.Geteuid()) != options.UID || uint32(os.Getegid()) != options.GID {
+		return "OFFICE_GO_IDENTITY_REFUSED"
+	}
+	account, err := serviceconfig.ReadOfficeWithOptions(options)
 	if err != nil {
 		return "OFFICE_GO_ACCOUNT_REFUSED"
 	}
 	defer account.Clear()
 	if account.Registrar != serviceconfig.OfficeRegistrar || account.TLSName != serviceconfig.OfficeTLSName {
 		return "OFFICE_GO_TRUST_POLICY_REFUSED"
+	}
+	if *noNetwork {
+		return "OFFICE_GO_FORMAT_OWNER_POLICY_OK_NO_NETWORK"
 	}
 	roots, err := x509.SystemCertPool()
 	if err != nil || roots == nil || len(roots.Subjects()) == 0 {
@@ -37,7 +50,7 @@ func check() string {
 	dialer := tls.Dialer{NetDialer: &net.Dialer{Timeout: 5 * time.Second},
 		Config: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots,
 			ServerName: serviceconfig.OfficeTLSName}}
-	connection, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(account.Registrar, strconv.Itoa(5061)))
+	connection, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(account.Registrar, strconv.Itoa(int(options.OfficePort))))
 	if err != nil {
 		return "OFFICE_GO_VERIFIED_TLS_REFUSED"
 	}
@@ -50,5 +63,5 @@ func check() string {
 }
 
 func main() {
-	fmt.Println(check()) // fixed category only; never fmt.Print(account or err)
+	fmt.Println(check(os.Args[1:])) // fixed category only; never fmt.Print(account or err)
 }
