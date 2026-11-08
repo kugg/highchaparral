@@ -74,3 +74,9 @@ credentials, or automatically redial. `index.html` loads local assets
 only; no CDN or third-party runtime fetch is used. The npm build recipe
 uses locked, integrity-checked dependencies; SIP.js and esbuild are MIT
 licensed and their generated binaries are kept out of Git.
+
+For each release, use the
+[isolated twin E2E release test plan](../docs/softphone-twin-e2e-release-plan.md).
+It distinguishes runnable offline checks from the as-yet-unbuilt
+browser→Asterisk→VGW→synthetic-provider fixture and refuses an E2E
+pass based on browser mocks alone.
