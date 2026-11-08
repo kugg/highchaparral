@@ -12,13 +12,19 @@ import (
 	"time"
 
 	"example.com/ata/voip-gateway/internal/asterisk"
+	"example.com/ata/voip-gateway/internal/serviceconfig"
 )
 
 func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
+	peer, err := serviceconfig.ReadARIPeerCertificate()
+	if err != nil {
+		slog.Error("local ARI peer provisioning unavailable")
+		os.Exit(1)
+	}
 	client, err := asterisk.New(asterisk.Config{
-		BaseURL: "http://127.0.0.1:8088", Username: os.Getenv("GATEWAY_LAB_ARI_USER"),
+		BaseURL: "https://127.0.0.1:8089", PeerCertificate: peer, Username: os.Getenv("GATEWAY_LAB_ARI_USER"),
 		Password: os.Getenv("GATEWAY_LAB_ARI_PASSWORD"), Timeout: 2 * time.Second,
 	})
 	if err != nil {

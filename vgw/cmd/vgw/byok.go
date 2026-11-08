@@ -48,6 +48,10 @@ func runBYOK(out io.Writer) error {
 	if err != nil {
 		return errors.New("private BYOK configuration unavailable")
 	}
+	ariPeer, err := serviceconfig.ReadARIPeerCertificate()
+	if err != nil {
+		return errors.New("authenticated ARI peer provisioning unavailable")
+	}
 	roots, err := x509.SystemCertPool()
 	if err != nil || roots == nil {
 		return errors.New("BYOK system CA roots unavailable")
@@ -68,7 +72,7 @@ func runBYOK(out io.Writer) error {
 		return errors.New("one-use BYOK call progress unavailable")
 	}
 	defer milestones.Close()
-	ari, err := asterisk.New(asterisk.Config{BaseURL: "http://127.0.0.1:8088",
+	ari, err := asterisk.New(asterisk.Config{BaseURL: "https://127.0.0.1:8089", PeerCertificate: ariPeer,
 		Username: config.ARIUser, Password: config.ARIPassword,
 		Timeout: 3 * time.Second, Target: asterisk.BrowserIngress})
 	if err != nil {

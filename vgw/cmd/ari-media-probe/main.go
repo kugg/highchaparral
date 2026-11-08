@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"example.com/ata/voip-gateway/internal/asterisk"
+	"example.com/ata/voip-gateway/internal/serviceconfig"
 	"github.com/pion/rtp"
 )
 
@@ -144,8 +145,12 @@ func checkBridgeDuringWindow(ctx context.Context, read func(context.Context) (st
 func run(ctx context.Context, controlOnly bool) (result error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	peer, err := serviceconfig.ReadARIPeerCertificate()
+	if err != nil {
+		return errors.New("ARI peer provisioning unavailable")
+	}
 	client, err := asterisk.New(asterisk.Config{
-		BaseURL: "http://127.0.0.1:8088", Username: os.Getenv("GATEWAY_LAB_ARI_USER"),
+		BaseURL: "https://127.0.0.1:8089", PeerCertificate: peer, Username: os.Getenv("GATEWAY_LAB_ARI_USER"),
 		Password: os.Getenv("GATEWAY_LAB_ARI_PASSWORD"), Timeout: 2 * time.Second,
 	})
 	if err != nil {
