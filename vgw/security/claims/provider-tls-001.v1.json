@@ -37,6 +37,11 @@
     "vgw/internal/registration/registration.go",
     "vgw/internal/serviceconfig/byok.go"
   ],
+  "binding_digests": {
+    "vgw/internal/provider/leg.go": "4c08a21e66658b737a7b6747faa2aa94c48c707451f43ad1aa8030bad4cbf97e",
+    "vgw/internal/registration/registration.go": "72782ae400d5e5d5f5a4611b6e2b4a46381d01db1e49c03a38a7d50bed7e6dd0",
+    "vgw/internal/serviceconfig/byok.go": "cff8d1a256870f94a0e50afc0ca26c42d987ab6a65a011e770f78d3a62a2f9a2"
+  },
   "required_behaviors": [
     "min_tls_1_2",
     "hostname_match",

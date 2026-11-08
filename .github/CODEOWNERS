@@ -1,0 +1,6 @@
+# Product-owned security claims require review by the security owner.
+# Closes OPLANE_REQ-00005007 (reviewer approval policy) for the claim
+# specification surface. NOTE: this file only takes effect when the repo's
+# branch protection has "Require review from Code Owners" enabled for the
+# protected branch; that setting is configured outside this PR.
+/vgw/security/	@kugg

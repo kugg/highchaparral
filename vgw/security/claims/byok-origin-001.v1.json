@@ -37,6 +37,10 @@
     "vgw/internal/byok/reservation.go",
     "vgw/cmd/vgw/byok.go"
   ],
+  "binding_digests": {
+    "vgw/internal/byok/reservation.go": "e6efda7979d9cdebddd198d4dcf162e637110ded2a71c1aec1723d8a7c991ba7",
+    "vgw/cmd/vgw/byok.go": "07d59432312976a6a51c175219fc792361cb089bb2f6eb7a58758b1f6f9cfe9f"
+  },
   "required_behaviors": [
     "exact_origin_match",
     "owner_only_socket"

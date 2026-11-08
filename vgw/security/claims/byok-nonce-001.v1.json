@@ -39,6 +39,12 @@
     "vgw/internal/asterisk/ari.go",
     "vgw/internal/asterisk/browser_event.go"
   ],
+  "binding_digests": {
+    "vgw/internal/byok/reservation.go": "e6efda7979d9cdebddd198d4dcf162e637110ded2a71c1aec1723d8a7c991ba7",
+    "vgw/internal/softphone/coordinator.go": "54bd20c55e591f1b403f9eb8eb612f705041d61e22cf946bccc16d890b3bc6b2",
+    "vgw/internal/asterisk/ari.go": "a06b6743f935061f0cc2f25da2456ee97fb6b85f581cdf6335784ba63aa92122",
+    "vgw/internal/asterisk/browser_event.go": "91851c3088bda556c50d0c8393754b14bf8b4f3e6e2bf021171052b1eac3f83b"
+  },
   "required_behaviors": [
     "single_use_consume",
     "authenticated_readback_binding"

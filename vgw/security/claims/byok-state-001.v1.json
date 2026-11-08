@@ -37,6 +37,10 @@
     "vgw/internal/byok/reservation.go",
     "vgw/internal/softphone/coordinator.go"
   ],
+  "binding_digests": {
+    "vgw/internal/byok/reservation.go": "e6efda7979d9cdebddd198d4dcf162e637110ded2a71c1aec1723d8a7c991ba7",
+    "vgw/internal/softphone/coordinator.go": "54bd20c55e591f1b403f9eb8eb612f705041d61e22cf946bccc16d890b3bc6b2"
+  },
   "required_behaviors": [
     "atomic_consume",
     "fail_closed_teardown"

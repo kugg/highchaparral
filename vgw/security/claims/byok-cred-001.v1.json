@@ -39,6 +39,11 @@
     "vgw/internal/softphone/coordinator.go",
     "vgw/internal/provider/leg.go"
   ],
+  "binding_digests": {
+    "vgw/internal/byok/reservation.go": "e6efda7979d9cdebddd198d4dcf162e637110ded2a71c1aec1723d8a7c991ba7",
+    "vgw/internal/softphone/coordinator.go": "54bd20c55e591f1b403f9eb8eb612f705041d61e22cf946bccc16d890b3bc6b2",
+    "vgw/internal/provider/leg.go": "4c08a21e66658b737a7b6747faa2aa94c48c707451f43ad1aa8030bad4cbf97e"
+  },
   "required_behaviors": [
     "redacted_stringification",
     "zeroize_after_use"

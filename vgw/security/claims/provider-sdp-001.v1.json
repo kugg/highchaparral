@@ -35,6 +35,9 @@
   "bindings": [
     "vgw/internal/provider/leg.go"
   ],
+  "binding_digests": {
+    "vgw/internal/provider/leg.go": "4c08a21e66658b737a7b6747faa2aa94c48c707451f43ad1aa8030bad4cbf97e"
+  },
   "required_behaviors": [
     "pcma_only",
     "source_match"

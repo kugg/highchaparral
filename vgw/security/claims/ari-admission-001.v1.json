@@ -37,6 +37,10 @@
     "vgw/internal/asterisk/ari.go",
     "vgw/internal/asterisk/browser_event.go"
   ],
+  "binding_digests": {
+    "vgw/internal/asterisk/ari.go": "a06b6743f935061f0cc2f25da2456ee97fb6b85f581cdf6335784ba63aa92122",
+    "vgw/internal/asterisk/browser_event.go": "91851c3088bda556c50d0c8393754b14bf8b4f3e6e2bf021171052b1eac3f83b"
+  },
   "required_behaviors": [
     "loopback_pin",
     "event_validation"
