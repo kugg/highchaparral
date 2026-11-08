@@ -47,11 +47,12 @@ func Handle(dialog *diago.DialogServerSession) {
 		slog.Warn("trying failed")
 		return
 	}
-	if err := dialog.Answer(); err != nil {
+	dm, err := dialog.Answer(diago.AnswerOptions{})
+	if err != nil {
 		slog.Warn("answer failed")
 		return
 	}
-	if err := dialog.Echo(); err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, context.Canceled) {
+	if err := dm.Echo(); err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, context.Canceled) {
 		// Never log remote SIP headers, SDP, media, or library errors containing them.
 		slog.Warn("echo stopped")
 	}

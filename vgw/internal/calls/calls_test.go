@@ -81,7 +81,7 @@ func nextEvent(t *testing.T, sink <-chan Event, want Kind) Event {
 
 func invite(t *testing.T, d *diago.Diago, ctx context.Context, port int, user string) *diago.DialogClientSession {
 	t.Helper()
-	dialog, err := d.Invite(ctx, sip.Uri{User: user, Host: "127.0.0.1", Port: port}, diago.InviteOptions{})
+	dialog, _, err := d.Invite(ctx, sip.Uri{User: user, Host: "127.0.0.1", Port: port}, diago.InviteOptions{})
 	if err != nil {
 		var rejected *sipgo.ErrDialogResponse
 		switch {
@@ -145,14 +145,15 @@ func TestBusyAndWrongDestination(t *testing.T) {
 	}
 	defer first.Close()
 	firstDone := make(chan error, 1)
-	go func() { firstDone <- first.Invite(callCtx, diago.InviteClientOptions{}) }()
+	go func() { _, ferr := first.Invite(callCtx, diago.InviteClientOptions{})
+	firstDone <- ferr }()
 	nextEvent(t, sink, Incoming)
 	nextEvent(t, sink, Ringing)
 	for _, tc := range []struct {
 		user string
 		code int
 	}{{"desk", sip.StatusBusyHere}, {"other", sip.StatusNotFound}} {
-		_, err := d.Invite(callCtx, sip.Uri{User: tc.user, Host: "127.0.0.1", Port: m.config.Port}, diago.InviteOptions{})
+		_, _, err := d.Invite(callCtx, sip.Uri{User: tc.user, Host: "127.0.0.1", Port: m.config.Port}, diago.InviteOptions{})
 		var rejected *sipgo.ErrDialogResponse
 		if !errors.As(err, &rejected) || rejected.Res.StatusCode != tc.code {
 			t.Fatalf("expected SIP %d for admitted target policy", tc.code)
@@ -188,7 +189,7 @@ func TestCancelBeforeAnswer(t *testing.T) {
 	done := make(chan error, 1)
 	inviteCtx, cancelInvite := context.WithCancel(callCtx)
 	go func() {
-		done <- dialog.Invite(inviteCtx, diago.InviteClientOptions{OnResponse: func(res *sip.Response) error {
+		_, err := dialog.Invite(inviteCtx, diago.InviteClientOptions{OnResponse: func(res *sip.Response) error {
 			if res.StatusCode == sip.StatusRinging {
 				select {
 				case gotRinging <- struct{}{}:
@@ -197,6 +198,7 @@ func TestCancelBeforeAnswer(t *testing.T) {
 			}
 			return nil
 		}})
+		done <- err
 	}()
 	nextEvent(t, sink, Incoming)
 	nextEvent(t, sink, Ringing)
@@ -219,7 +221,7 @@ func TestOfferTimeout(t *testing.T) {
 	d := peer(t)
 	callCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
-	_, err := d.Invite(callCtx, sip.Uri{User: "desk", Host: "127.0.0.1", Port: m.config.Port}, diago.InviteOptions{})
+	_, _, err := d.Invite(callCtx, sip.Uri{User: "desk", Host: "127.0.0.1", Port: m.config.Port}, diago.InviteOptions{})
 	var rejected *sipgo.ErrDialogResponse
 	if !errors.As(err, &rejected) || rejected.Res.StatusCode != sip.StatusRequestTimeout {
 		t.Fatal("no bounded offer timeout")
@@ -292,7 +294,7 @@ func TestACKJustBeforeDeadlineKeepsCallAlive(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer dialog.Close()
-	if err := dialog.Invite(callCtx, diago.InviteClientOptions{}); err != nil {
+	if _, err := dialog.Invite(callCtx, diago.InviteClientOptions{}); err != nil {
 		t.Fatal("pre-ACK invite failed")
 	}
 	nextEvent(t, events, Incoming)
@@ -368,7 +370,7 @@ func TestUnresponsiveEventConsumerFailsClosed(t *testing.T) {
 	if len(events) != 4 {
 		t.Fatal("first call did not deliver four bounded events")
 	}
-	_, err := d.Invite(callCtx, sip.Uri{User: "desk", Host: "127.0.0.1", Port: m.config.Port}, diago.InviteOptions{})
+	_, _, err := d.Invite(callCtx, sip.Uri{User: "desk", Host: "127.0.0.1", Port: m.config.Port}, diago.InviteOptions{})
 	var rejected *sipgo.ErrDialogResponse
 	if !errors.As(err, &rejected) || rejected.Res.StatusCode != sip.StatusServiceUnavailable {
 		t.Fatal("undrained event buffer did not fail admission closed")
@@ -436,7 +438,7 @@ func TestNoACKDeadlineClosesWorkerSockets(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer dialog.Close()
-	if err := dialog.Invite(ctx, diago.InviteClientOptions{}); err != nil {
+	if _, err := dialog.Invite(ctx, diago.InviteClientOptions{}); err != nil {
 		t.Fatal("no-ACK test INVITE failed")
 	}
 	sd := sdp.SessionDescription{}

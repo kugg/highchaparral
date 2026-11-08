@@ -105,8 +105,8 @@ func syntheticProvider(t *testing.T) (Profile, *atomic.Int32, *atomic.Int32) {
 			_ = dialog.Respond(sip.StatusNotFound, "Not Found", nil)
 			return
 		}
-		if dialog.Answer() == nil {
-			_ = dialog.Echo()
+		if dm, err := dialog.Answer(diago.AnswerOptions{}); err == nil {
+			_ = dm.Echo()
 		}
 	}); err != nil {
 		t.Fatal(err)

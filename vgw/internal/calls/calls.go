@@ -161,12 +161,12 @@ func (s *Service) failMedia() {
 	}
 }
 
-func (s *Service) pumpAudio(ctx context.Context, d *diago.DialogServerSession, id string) error {
-	reader, err := d.AudioReader()
+func (s *Service) pumpAudio(ctx context.Context, dm *diago.DialogMedia, id string) error {
+	reader, err := dm.AudioReader()
 	if err != nil || reader == nil {
 		return ErrMediaFailure
 	}
-	writer, err := d.AudioWriter()
+	writer, err := dm.AudioWriter()
 	if err != nil || writer == nil {
 		return ErrMediaFailure
 	}
@@ -180,7 +180,7 @@ func (s *Service) pumpAudio(ctx context.Context, d *diago.DialogServerSession, i
 				}
 				return
 			}
-			if n != 160 || d.RTPPacketReader.PacketHeader.PayloadType != 8 {
+			if n != 160 || dm.RTPPacketReader.PacketHeader.PayloadType != 8 {
 				continue // drop malformed or non-PCMA frames; no raw logging
 			}
 			var frame AudioFrame
@@ -329,7 +329,12 @@ func (s *Service) handle(d *diago.DialogServerSession) {
 	ackTimer := time.NewTimer(ackWait)
 	defer ackTimer.Stop()
 	answer := make(chan error, 1)
-	go func() { answer <- d.Answer() }()
+	var dm *diago.DialogMedia
+	go func() {
+		m, err := d.Answer(diago.AnswerOptions{})
+		dm = m
+		answer <- err
+	}()
 	var answerErr error
 	select {
 	case answerErr = <-answer:
@@ -366,7 +371,7 @@ func (s *Service) handle(d *diago.DialogServerSession) {
 	if s.config.MediaEnabled {
 		mediaCtx, cancel := context.WithCancel(d.Context())
 		defer cancel()
-		if err := s.pumpAudio(mediaCtx, d, id); err != nil {
+		if err := s.pumpAudio(mediaCtx, dm, id); err != nil {
 			s.failMedia()
 			return
 		}

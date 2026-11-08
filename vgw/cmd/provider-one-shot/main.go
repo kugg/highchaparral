@@ -202,7 +202,7 @@ func oneCall(ctx context.Context, c config) (result outcome, category string) {
 	recipient.UriParams = sip.NewParams()
 	recipient.UriParams.Add("transport", "tls")
 	inviteCtx, stopInvite := context.WithTimeout(ctx, 12*time.Second)
-	call, err := dg.Invite(inviteCtx, recipient, diago.InviteOptions{
+	call, med, err := dg.Invite(inviteCtx, recipient, diago.InviteOptions{
 		Transport: "tls", Username: c.creds.user, Password: c.creds.pass,
 	})
 	stopInvite()
@@ -221,7 +221,7 @@ func oneCall(ctx context.Context, c config) (result outcome, category string) {
 		}
 		_ = call.Close()
 	}()
-	session := call.MediaSession()
+	session := med.MediaSession()
 	if session == nil || session.Raddr.IP.To4() == nil || session.Raddr.Port < 1 ||
 		(!c.allowLoopback && (session.Raddr.IP.IsLoopback() || session.Raddr.IP.IsPrivate() ||
 			session.Raddr.IP.IsMulticast() || session.Raddr.IP.IsUnspecified())) {
@@ -230,11 +230,11 @@ func oneCall(ctx context.Context, c config) (result outcome, category string) {
 	if codecs := session.CommonCodecs(); len(codecs) != 1 || codecs[0].PayloadType != 8 {
 		return result, "provider-codec-refused"
 	}
-	reader, err := call.AudioReader()
+	reader, err := med.AudioReader()
 	if err != nil {
 		return result, "media-unavailable"
 	}
-	writer, err := call.AudioWriter()
+	writer, err := med.AudioWriter()
 	if err != nil {
 		return result, "media-unavailable"
 	}
@@ -248,7 +248,7 @@ func oneCall(ctx context.Context, c config) (result outcome, category string) {
 			}
 			from, ok := session.ReadRTPFromAddr.(*net.UDPAddr)
 			if !ok || !from.IP.Equal(session.Raddr.IP) || from.Port != session.Raddr.Port ||
-				n != 160 || call.RTPPacketReader.PacketHeader.PayloadType != 8 {
+				n != 160 || med.RTPPacketReader.PacketHeader.PayloadType != 8 {
 				continue
 			}
 			select {
