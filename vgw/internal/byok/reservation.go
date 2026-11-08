@@ -24,6 +24,13 @@ var (
 	noncePattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
 )
 
+// activeTTL bounds how long an unsettled (ambiguous) call may hold the slot
+// before it auto-recovers. It MUST exceed the provider-leg context bound
+// (2 minutes, see softphone coordinator) so the old leg is force-torn-down
+// by its own deadline before the slot can be reused; a live call can never
+// be double-spent. Without it an ambiguous teardown blocks BYOK forever.
+const activeTTL = 5 * time.Minute
+
 func reject() error { return errors.New("BYOK reservation refused") }
 
 func validPassword(value string) bool {
@@ -71,11 +78,20 @@ type reservation struct {
 }
 
 type Store struct {
-	mu      sync.Mutex
-	origins map[string]string // exact HTTPS Origin -> matching request Host
-	now     func() time.Time
-	pending *reservation
-	active  string
+	mu            sync.Mutex
+	origins       map[string]string // exact HTTPS Origin -> matching request Host
+	now           func() time.Time
+	pending       *reservation
+	active        string
+	activeExpires time.Time
+}
+
+// expireActiveLocked clears a stale active slot so an ambiguous teardown
+// cannot block BYOK indefinitely. Callers must hold s.mu.
+func (s *Store) expireActiveLocked() {
+	if s.active != "" && !s.now().Before(s.activeExpires) {
+		s.active = ""
+	}
 }
 
 func (*Store) String() string { return "BYOK reservation store [redacted]" }
@@ -146,6 +162,7 @@ func (s *Store) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		clear(s.pending.password)
 		s.pending = nil // never sent to the provider; no pending call was consumed
 	}
+	s.expireActiveLocked()
 	if s.pending != nil || s.active != "" {
 		refuse(http.StatusConflict)
 		return
@@ -166,6 +183,7 @@ func (s *Store) Consume(nonce, target string) (Credentials, error) {
 		clear(s.pending.password)
 		s.pending = nil
 	}
+	s.expireActiveLocked()
 	if s.pending == nil || s.active != "" ||
 		!noncePattern.MatchString(nonce) || !destination.MatchString(target) ||
 		subtle.ConstantTimeCompare([]byte(s.pending.nonce), []byte(nonce)) != 1 ||
@@ -177,6 +195,7 @@ func (s *Store) Consume(nonce, target string) (Credentials, error) {
 	out := Credentials{Identity: s.pending.identity, Password: copyOfSecret, Target: target}
 	s.pending = nil
 	s.active = nonce
+	s.activeExpires = s.now().Add(activeTTL)
 	return out, nil
 }
 
@@ -186,6 +205,7 @@ func (s *Store) Consume(nonce, target string) (Credentials, error) {
 func (s *Store) Complete(nonce string, settled bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.expireActiveLocked()
 	if !settled || s.active == "" || subtle.ConstantTimeCompare([]byte(s.active), []byte(nonce)) != 1 {
 		return reject()
 	}
