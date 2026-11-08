@@ -3,13 +3,11 @@ package serviceconfig
 import (
 	"bytes"
 	"errors"
-	"io"
+	"net"
 	"net/url"
 	"os"
-	"os/user"
 	"strconv"
 	"strings"
-	"syscall"
 )
 
 const BYOKPath = "/etc/voip-gateway/byok.config"
@@ -21,8 +19,12 @@ var byokKeys = [...]string{"ARI_USER", "ARI_PASSWORD", "UPSTREAM_HOST", "UPSTREA
 // own through a bounded HTTPS reservation in volatile process memory.
 type BYOKConfig struct {
 	ARIUser, ARIPassword string
+	ARIBaseURL           string
 	Host, TLSName        string
 	Port                 uint16
+	BindIPv4             string
+	BindPort             uint16
+	ErrorLogPath         string
 	Origins              [2]string
 }
 
@@ -48,7 +50,7 @@ func ParseBYOK(raw []byte) (BYOKConfig, error) {
 		return empty, reject()
 	}
 	rows := strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n")
-	if len(rows) != len(byokKeys) {
+	if len(rows) < len(byokKeys) || len(rows) > len(byokKeys)+4 {
 		return empty, reject()
 	}
 	values := make(map[string]string, len(byokKeys))
@@ -61,6 +63,8 @@ func ParseBYOK(raw []byte) (BYOKConfig, error) {
 		for _, want := range byokKeys {
 			allowed = allowed || key == want
 		}
+		allowed = allowed || key == "ARI_BASE_URL" || key == "SIP_BIND_IPV4" ||
+			key == "SIP_BIND_PORT" || key == "ERROR_LOG_PATH"
 		if !allowed {
 			return empty, reject()
 		}
@@ -81,44 +85,39 @@ func ParseBYOK(raw []byte) (BYOKConfig, error) {
 		values["SITE_ORIGIN_LAN"] == values["SITE_ORIGIN_WG"] {
 		return empty, reject()
 	}
+	baseURL := DefaultARIBaseURL
+	if values["ARI_BASE_URL"] != "" {
+		baseURL = values["ARI_BASE_URL"]
+	}
+	if !validARIURL(baseURL) {
+		return empty, reject()
+	}
+	bindPort, err := parseBindPort(values["SIP_BIND_PORT"])
+	if err != nil || (values["SIP_BIND_IPV4"] != "" &&
+		(!validHost(values["SIP_BIND_IPV4"]) || net.ParseIP(values["SIP_BIND_IPV4"]).To4() == nil)) ||
+		(values["ERROR_LOG_PATH"] != "" && !validAbs(values["ERROR_LOG_PATH"])) {
+		return empty, reject()
+	}
 	return BYOKConfig{ARIUser: values["ARI_USER"], ARIPassword: values["ARI_PASSWORD"],
 		Host: values["UPSTREAM_HOST"], TLSName: values["UPSTREAM_TLS_NAME"], Port: uint16(port),
-		Origins: [2]string{values["SITE_ORIGIN_LAN"], values["SITE_ORIGIN_WG"]}}, nil
+		ARIBaseURL: baseURL, BindIPv4: values["SIP_BIND_IPV4"], BindPort: bindPort,
+		ErrorLogPath: values["ERROR_LOG_PATH"],
+		Origins:      [2]string{values["SITE_ORIGIN_LAN"], values["SITE_ORIGIN_WG"]}}, nil
 }
 
-// ReadBYOK requires the existing root:vgw 0750 directory, a root:vgw
-// 0640 single-linked fixed config and no symlink. No path comes from env.
-func ReadBYOK() (BYOKConfig, error) {
-	var empty BYOKConfig
-	group, err := user.LookupGroup(GroupName)
+// ReadBYOKWithOptions enforces the reviewed root:selected-GID path and
+// inode boundary before private config bytes are interpreted.
+func ReadBYOKWithOptions(options RuntimeOptions) (BYOKConfig, error) {
+	if !options.Valid() || options.UID != uint32(os.Geteuid()) || options.GID != uint32(os.Getegid()) {
+		return BYOKConfig{}, reject()
+	}
+	raw, err := readProtected(options.ConfigPath, options.UID, options.GID, 2048)
 	if err != nil {
-		return empty, reject()
-	}
-	parsed, err := strconv.ParseUint(group.Gid, 10, 32)
-	if err != nil {
-		return empty, reject()
-	}
-	gid := uint32(parsed)
-	dir, err := os.Lstat(Directory)
-	if err != nil || !owned(dir, 0, gid, 0750, false) {
-		return empty, reject()
-	}
-	entry, err := os.Lstat(BYOKPath)
-	if err != nil || !owned(entry, 0, gid, 0640, true) || entry.Size() > 2048 {
-		return empty, reject()
-	}
-	fd, err := os.OpenFile(BYOKPath, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
-	if err != nil {
-		return empty, reject()
-	}
-	defer fd.Close()
-	opened, err := fd.Stat()
-	if err != nil || !os.SameFile(entry, opened) || !owned(opened, 0, gid, 0640, true) || opened.Size() > 2048 {
-		return empty, reject()
-	}
-	raw, err := io.ReadAll(io.LimitReader(fd, 2049))
-	if err != nil || len(raw) > 2048 {
-		return empty, reject()
+		return BYOKConfig{}, err
 	}
 	return ParseBYOK(raw)
+}
+
+func ReadBYOK() (BYOKConfig, error) {
+	return ReadBYOKWithOptions(DefaultBYOKRuntimeOptions())
 }

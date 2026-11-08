@@ -5,7 +5,9 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -48,11 +50,18 @@ func category(err error) string {
 	}
 }
 
-func run() string {
-	if len(os.Args) != 1 || os.Geteuid() != 34567 || os.Getegid() != 34567 {
+func run(args []string) string {
+	flags := flag.NewFlagSet("ari-browser-probe", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	runtimeFlags := serviceconfig.BindRuntimeFlags(flags, serviceconfig.DefaultBYOKRuntimeOptions())
+	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return "GO_ARI_IDENTITY_REFUSED"
 	}
-	config, err := serviceconfig.ReadBYOK()
+	options, err := runtimeFlags.Options()
+	if err != nil || uint32(os.Geteuid()) != options.UID || uint32(os.Getegid()) != options.GID {
+		return "GO_ARI_IDENTITY_REFUSED"
+	}
+	config, err := serviceconfig.ReadBYOKWithOptions(options)
 	if err != nil {
 		return "GO_ARI_CONFIG_REFUSED"
 	}
@@ -60,7 +69,7 @@ func run() string {
 	defer stop()
 	ctx, timeout := context.WithTimeout(ctx, 40*time.Second)
 	defer timeout()
-	client, err := asterisk.New(asterisk.Config{BaseURL: "http://127.0.0.1:8088",
+	client, err := asterisk.New(asterisk.Config{BaseURL: config.ARIBaseURL,
 		Username: config.ARIUser, Password: config.ARIPassword,
 		Timeout: 3 * time.Second, Target: asterisk.BrowserIngress})
 	if err != nil {
@@ -126,5 +135,5 @@ func run() string {
 }
 
 func main() {
-	fmt.Println(run()) // exact fixed category or ready marker only
+	fmt.Println(run(os.Args[1:])) // exact fixed category or ready marker only
 }

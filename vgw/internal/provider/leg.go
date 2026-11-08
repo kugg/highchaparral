@@ -25,6 +25,7 @@ type Profile struct {
 	TLSName  string
 	Port     int
 	BindIPv4 string
+	BindPort int // 0 means kernel-assigned ephemeral source port
 	Roots    *x509.CertPool
 	// OnAnswer admits the browser only after provider SDP/PCMA is verified.
 	// It must make at most one owned ARI answer request, never redial SIP.
@@ -85,7 +86,7 @@ func inviteFailureMilestone(err error) byok.Milestone {
 // BYOK Store. No error contains an upstream header, credential or number.
 func Call(ctx context.Context, p Profile, c byok.Credentials, callID string,
 	fromARI <-chan calls.AudioFrame, toARI chan<- calls.AudioFrame) (settled bool, err error) {
-	if p.Roots == nil || p.Port < 1 || p.Port > 65535 || p.Host == "" || p.TLSName == "" ||
+	if p.Roots == nil || p.Port < 1 || p.Port > 65535 || p.BindPort < 0 || p.BindPort > 65535 || p.Host == "" || p.TLSName == "" ||
 		net.ParseIP(p.BindIPv4).To4() == nil || fromARI == nil || toARI == nil ||
 		!regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(callID) ||
 		!regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`).MatchString(c.Identity) ||
@@ -115,7 +116,7 @@ func Call(ctx context.Context, p Profile, c byok.Credentials, callID string,
 	}
 	defer ua.Close()
 	dg := diago.NewDiago(ua, diago.WithTransport(diago.Transport{
-		Transport: "tls", BindHost: p.BindIPv4, BindPort: 0,
+		Transport: "tls", BindHost: p.BindIPv4, BindPort: p.BindPort,
 	}), diago.WithMediaConfig(diago.MediaConfig{Codecs: []media.Codec{media.CodecAudioAlaw}}),
 		diago.WithLogger(safesip.Logger))
 	uri := sip.Uri{Scheme: "sips", User: c.Identity, Host: p.Host, Port: p.Port}

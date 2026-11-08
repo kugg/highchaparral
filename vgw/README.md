@@ -26,6 +26,19 @@ provider call bridge and production procd/Ansible apply are not yet
 implemented. Do not deploy the M0 prototype, register-only command
 or provider-one-shot as an APU gateway service.
 
+**Runtime configuration development:** The old paths are defaults,
+not mandatory locations. `cmd/vgw --check-config --config
+/absolute/private/vgw.config` accepts an owner-0600 config in an
+owner-0700 private directory without `/etc`, root or provider traffic.
+The launcher can optionally select its effective `--run-uid`,
+`--run-gid`, runtime/state directories, socket basename and PID-file
+basename; no passwd/shadow entry or fixed compiled UID is required.
+`ARI_BASE_URL`, SIP bind IPv4/port and optional fixed-category error
+log path come from the strictly parsed config, with legacy defaults.
+See [`docs/configurable-daemon-runtime.md`](docs/configurable-daemon-runtime.md)
+and the redacted [`cmd/literalcheck`](cmd/literalcheck) inventory/CI
+gate. These options do not complete the office voice release.
+
 ## Historical development milestones
 
 This module is the M0 **local** library proof from

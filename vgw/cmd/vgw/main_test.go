@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -24,6 +27,44 @@ func TestDefaultDryRunAndBadArgumentsDoNotEchoCredentials(t *testing.T) {
 		if err == nil || strings.Contains(err.Error(), "synthetic-secret-only") || stdout.Len() != 0 {
 			t.Fatal("untrusted argv accepted or secret echoed")
 		}
+	}
+}
+
+func TestCheckConfigFromRootlessPrivatePathWithoutEtcOrProvider(t *testing.T) {
+	directory, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil || os.Chmod(directory, 0700) != nil {
+		t.Fatal("synthetic rootless config directory unavailable")
+	}
+	path := filepath.Join(directory, "vgw.config")
+	logPath := filepath.Join(directory, "vgw_error.log")
+	content := "ARI_USER=synthetic\nARI_PASSWORD=synthetic_secure_ari_password\n" +
+		"UPSTREAM_HOST=sip.provider.test\nUPSTREAM_PORT=15061\n" +
+		"UPSTREAM_TLS_NAME=sip.provider.test\nUPSTREAM_USERNAME=synthetic\n" +
+		"UPSTREAM_PASSWORD=unit-only\nUPSTREAM_CERT_SHA256=ca-only\n" +
+		"ARI_BASE_URL=http://127.0.0.1:18088\nSIP_BIND_IPV4=127.0.0.1\nSIP_BIND_PORT=15062\n" +
+		"ERROR_LOG_PATH=" + logPath + "\n"
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil || os.Chmod(path, 0600) != nil {
+		t.Fatal("synthetic rootless config unavailable")
+	}
+	args := []string{"--check-config", "--config=" + path,
+		"--run-uid=" + strconv.Itoa(os.Geteuid()), "--run-gid=" + strconv.Itoa(os.Getegid())}
+	var out bytes.Buffer
+	if err := run(args, &out); err != nil || !strings.Contains(out.String(), "syntax PASS") {
+		t.Fatal("local config check required /etc or refused reviewed rootless options")
+	}
+	if _, err := os.Lstat(logPath); !os.IsNotExist(err) {
+		t.Fatal("offline config check opened a log or listener")
+	}
+	out.Reset()
+	if err := run(append(args, "--run-uid=0001"), &out); err == nil || out.Len() != 0 {
+		t.Fatal("ambiguous runtime identity accepted or reflected")
+	}
+	link := filepath.Join(directory, "config-link")
+	if err := os.Symlink(path, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"--check-config", "--config=" + link}, &out); err == nil || out.Len() != 0 {
+		t.Fatal("rootless config symlink accepted or reflected")
 	}
 }
 

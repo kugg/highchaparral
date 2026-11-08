@@ -5,63 +5,37 @@ package main
 import (
 	"context"
 	"crypto/x509"
+	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
-	"os/user"
-	"syscall"
 	"time"
 
 	"example.com/ata/voip-gateway/internal/serviceconfig"
 )
 
-func owned(path string) bool {
-	info, err := os.Lstat(path)
-	if err != nil || !info.IsDir() || info.Mode().Perm() != 0700 {
-		return false
-	}
-	st, ok := info.Sys().(*syscall.Stat_t)
-	return ok && st.Uid == 34567 && st.Gid == 34567
-}
-
 func main() {
-	if len(os.Args) != 1 || os.Geteuid() != 34567 || os.Getegid() != 34567 {
+	flags := flag.NewFlagSet("byok-diag", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	runtimeFlags := serviceconfig.BindRuntimeFlags(flags, serviceconfig.DefaultBYOKRuntimeOptions())
+	if flags.Parse(os.Args[1:]) != nil || flags.NArg() != 0 {
 		fmt.Println("DIAG_IDENTITY_REFUSED")
 		return
 	}
-	config, err := serviceconfig.ReadBYOK()
+	options, err := runtimeFlags.Options()
+	if err != nil || uint32(os.Geteuid()) != options.UID || uint32(os.Getegid()) != options.GID {
+		fmt.Println("DIAG_IDENTITY_REFUSED")
+		return
+	}
+	config, err := serviceconfig.ReadBYOKWithOptions(options)
 	if err != nil {
-		group, lookup := user.LookupGroup("vgw")
-		if lookup != nil || group.Gid != "34567" {
-			fmt.Println("DIAG_GROUP_REFUSED")
-			return
-		}
-		dir, dirErr := os.Lstat("/etc/voip-gateway")
-		if dirErr != nil || !dir.IsDir() || dir.Mode().Perm() != 0750 ||
-			dir.Sys().(*syscall.Stat_t).Uid != 0 || dir.Sys().(*syscall.Stat_t).Gid != 34567 {
-			fmt.Println("DIAG_CONFIG_DIR_REFUSED")
-			return
-		}
-		file, fileErr := os.Lstat("/etc/voip-gateway/byok.config")
-		if fileErr != nil || !file.Mode().IsRegular() || file.Mode().Perm() != 0640 ||
-			file.Sys().(*syscall.Stat_t).Uid != 0 || file.Sys().(*syscall.Stat_t).Gid != 34567 {
-			fmt.Println("DIAG_CONFIG_INODE_REFUSED")
-			return
-		}
-		raw, readErr := os.ReadFile("/etc/voip-gateway/byok.config")
-		if readErr != nil {
-			fmt.Println("DIAG_CONFIG_READ_REFUSED")
-			return
-		}
-		if _, parseErr := serviceconfig.ParseBYOK(raw); parseErr != nil {
-			fmt.Println("DIAG_CONFIG_PARSE_REFUSED")
-			return
-		}
 		fmt.Println("DIAG_CONFIG_REFUSED")
 		return
 	}
 	fmt.Println("DIAG_CONFIG_PASS")
-	if !owned("/run/voip-gateway") || !owned("/var/lib/voip-gateway/byok-v1") {
+	if !serviceconfig.OwnedRuntimeDir(options.RuntimeDir, options.UID, options.GID) ||
+		!serviceconfig.OwnedRuntimeDir(options.StateDir, options.UID, options.GID) {
 		fmt.Println("DIAG_DIRECTORIES_REFUSED")
 		return
 	}

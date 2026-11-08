@@ -24,6 +24,7 @@ import (
 type Config struct {
 	Host       string // empty means strictly local synthetic registrar
 	BindHost   string // empty means IPv4 127.0.0.1
+	BindPort   int    // 0 means kernel-assigned ephemeral port
 	Port       int
 	ServerName string
 	Roots      *x509.CertPool
@@ -59,7 +60,7 @@ func (c Config) valid() bool {
 			return false
 		}
 	}
-	return c.Port > 0 && c.Port <= 65535 && c.ServerName != "" && c.Roots != nil &&
+	return c.BindPort >= 0 && c.BindPort <= 65535 && c.Port > 0 && c.Port <= 65535 && c.ServerName != "" && c.Roots != nil &&
 		len(c.ServerName) <= 253 && validUser(c.Username) &&
 		len(c.Password) > 0 && len(c.Password) <= 256 && c.Expiry >= time.Second &&
 		c.Refresh >= 50*time.Millisecond && c.Refresh < c.Expiry &&
@@ -118,7 +119,7 @@ func Run(ctx context.Context, c Config) error {
 	// Diago's default handler can log peer-controlled From/To on failures.
 	// The M1 registration adapter does not allow that output into local logs.
 	dg := diago.NewDiago(ua,
-		diago.WithTransport(diago.Transport{Transport: "tls", BindHost: bindHost, BindPort: 0}),
+		diago.WithTransport(diago.Transport{Transport: "tls", BindHost: bindHost, BindPort: c.BindPort}),
 		diago.WithLogger(quiet),
 	)
 	uri := sip.Uri{Scheme: "sips", User: c.Username, Host: host, Port: c.Port}
@@ -218,7 +219,7 @@ func RunUpstreamObserved(ctx context.Context, service serviceconfig.Config, root
 		return errors.New("provider-neutral SIP TLS config refused")
 	}
 	settings := Config{
-		Host: service.UpstreamHost, BindHost: bindIP,
+		Host: service.UpstreamHost, BindHost: bindIP, BindPort: int(service.BindPort),
 		Port: int(service.UpstreamPort), ServerName: service.UpstreamTLSName,
 		Roots: roots, TLS: verifyTLS,
 		Username: service.UpstreamUsername, Password: service.UpstreamPassword,

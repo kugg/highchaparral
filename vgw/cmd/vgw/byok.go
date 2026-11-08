@@ -21,33 +21,45 @@ import (
 	"example.com/ata/voip-gateway/internal/softphone"
 )
 
-const (
-	byokRuntime = "/run/voip-gateway"
-	byokSocket  = byokRuntime + "/byok.sock"
-	byokState   = "/var/lib/voip-gateway/byok-v1"
-)
-
-func dirOwned(path string) bool {
-	entry, err := os.Lstat(path)
-	if err != nil || !entry.IsDir() || entry.Mode().Perm() != 0700 {
-		return false
-	}
-	stat, ok := entry.Sys().(*syscall.Stat_t)
-	return ok && int(stat.Uid) == os.Geteuid() && int(stat.Gid) == os.Getegid()
-}
-
 // runBYOK neither reads a static upstream SIP password nor starts the old
 // REGISTER service. Service files/runtime dirs must be pre-owned by a
 // separately reviewed deploy stage; the process refuses stale sockets.
-func runBYOK(out io.Writer) error {
-	if os.Geteuid() != 34567 || os.Getegid() != 34567 ||
-		!dirOwned(byokRuntime) || !dirOwned(byokState) {
+func runBYOK(out io.Writer, options serviceconfig.RuntimeOptions) (runErr error) {
+	if !options.Valid() || os.Geteuid() == 0 || options.GID == 0 ||
+		uint32(os.Geteuid()) != options.UID || uint32(os.Getegid()) != options.GID ||
+		!serviceconfig.OwnedRuntimeDir(options.RuntimeDir, options.UID, options.GID) ||
+		!serviceconfig.OwnedRuntimeDir(options.StateDir, options.UID, options.GID) {
 		return errors.New("nonroot BYOK ownership boundary unavailable")
 	}
-	config, err := serviceconfig.ReadBYOK()
+	config, err := serviceconfig.ReadBYOKWithOptions(options)
 	if err != nil {
 		return errors.New("private BYOK configuration unavailable")
 	}
+	logFile, err := serviceconfig.OpenErrorLog(config.ErrorLogPath, options.UID, options.GID)
+	if err != nil {
+		return errors.New("owner-only BYOK log unavailable")
+	}
+	if logFile != nil {
+		defer func() {
+			category := "VGW_BYOK_STOPPED"
+			if runErr != nil {
+				category = "VGW_BYOK_REFUSED"
+			}
+			if serviceconfig.WriteLogCategory(logFile, category) != nil && runErr == nil {
+				runErr = errors.New("bounded BYOK error log unavailable")
+			}
+			_ = logFile.Close()
+		}()
+	}
+	closePID, err := serviceconfig.OpenPIDFile(options)
+	if err != nil {
+		return errors.New("owned BYOK PID file unavailable")
+	}
+	defer func() {
+		if closePID() != nil && runErr == nil {
+			runErr = errors.New("owned BYOK PID file cleanup incomplete")
+		}
+	}()
 	roots, err := x509.SystemCertPool()
 	if err != nil || roots == nil {
 		return errors.New("BYOK system CA roots unavailable")
@@ -58,17 +70,21 @@ func runBYOK(out io.Writer) error {
 	if err != nil {
 		return errors.New("reviewed IPv4 registrar source unavailable")
 	}
-	journal, err := byok.OpenJournal(byokState)
+	bind, err = selectedBindIPv4(bind, config.BindIPv4)
+	if err != nil {
+		return errors.New("reviewed SIP bind address unavailable")
+	}
+	journal, err := byok.OpenJournal(options.StateDir)
 	if err != nil {
 		return errors.New("private BYOK call history unresolved")
 	}
 	defer journal.Close()
-	milestones, err := byok.OpenMilestones(byokState)
+	milestones, err := byok.OpenMilestones(options.StateDir)
 	if err != nil {
 		return errors.New("one-use BYOK call progress unavailable")
 	}
 	defer milestones.Close()
-	ari, err := asterisk.New(asterisk.Config{BaseURL: "http://127.0.0.1:8088",
+	ari, err := asterisk.New(asterisk.Config{BaseURL: config.ARIBaseURL,
 		Username: config.ARIUser, Password: config.ARIPassword,
 		Timeout: 3 * time.Second, Target: asterisk.BrowserIngress})
 	if err != nil {
@@ -83,16 +99,17 @@ func runBYOK(out io.Writer) error {
 	if err != nil {
 		return errors.New("exact BYOK HTTPS origins unavailable")
 	}
-	if _, err := os.Lstat(byokSocket); err == nil || !os.IsNotExist(err) {
+	socketPath := options.SocketPath()
+	if _, err := os.Lstat(socketPath); err == nil || !os.IsNotExist(err) {
 		return errors.New("stale/foreign BYOK socket requires review")
 	}
 	oldMask := syscall.Umask(077)
-	listener, err := net.Listen("unix", byokSocket)
+	listener, err := net.Listen("unix", socketPath)
 	syscall.Umask(oldMask)
 	if err != nil {
 		return errors.New("BYOK Unix listener unavailable")
 	}
-	ownedSocket, err := os.Lstat(byokSocket)
+	ownedSocket, err := os.Lstat(socketPath)
 	if err != nil {
 		_ = listener.Close()
 		return errors.New("BYOK Unix socket ownership unavailable")
@@ -100,19 +117,19 @@ func runBYOK(out io.Writer) error {
 	info, hasStat := ownedSocket.Sys().(*syscall.Stat_t)
 	if !hasStat || ownedSocket.Mode()&os.ModeSocket == 0 ||
 		info.Uid != uint32(os.Geteuid()) || info.Gid != uint32(os.Getegid()) || info.Nlink != 1 ||
-		os.Chmod(byokSocket, 0600) != nil {
+		os.Chmod(socketPath, 0600) != nil {
 		_ = listener.Close()
 		return errors.New("BYOK Unix socket ownership invalid")
 	}
-	if after, err := os.Lstat(byokSocket); err != nil || !os.SameFile(ownedSocket, after) || after.Mode().Perm() != 0600 {
+	if after, err := os.Lstat(socketPath); err != nil || !os.SameFile(ownedSocket, after) || after.Mode().Perm() != 0600 {
 		_ = listener.Close()
 		return errors.New("BYOK Unix socket permissions invalid")
 	}
 	defer func() {
 		_ = listener.Close()
-		if actual, e := os.Lstat(byokSocket); e == nil && os.SameFile(actual, ownedSocket) {
-			_ = os.Remove(byokSocket) // only the exact inode this process created
-			if dir, e := os.Open(filepath.Dir(byokSocket)); e == nil {
+		if actual, e := os.Lstat(socketPath); e == nil && os.SameFile(actual, ownedSocket) {
+			_ = os.Remove(socketPath) // only the exact inode this process created
+			if dir, e := os.Open(filepath.Dir(socketPath)); e == nil {
 				_ = dir.Sync()
 				_ = dir.Close()
 			}
@@ -131,7 +148,7 @@ func runBYOK(out io.Writer) error {
 	}()
 	bridge := &softphone.Bridge{ARI: ari, Milestones: milestones, ProviderProfile: provider.Profile{
 		Host: config.Host, TLSName: config.TLSName, Port: int(config.Port),
-		BindIPv4: bind, Roots: roots}}
+		BindIPv4: bind, BindPort: int(config.BindPort), Roots: roots}}
 	controller := &softphone.Coordinator{Store: store, Reader: ari, Call: bridge.Call,
 		Journal: journal, Milestones: milestones}
 	_, _ = io.WriteString(out, "VGW_BYOK_READY\n") // fixed marker, no config/credentials

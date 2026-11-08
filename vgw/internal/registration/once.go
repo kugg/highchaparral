@@ -41,7 +41,7 @@ func RegisterOnce(ctx context.Context, c Config) (OneShotResult, error) {
 	}
 	defer ua.Close()
 	dg := diago.NewDiago(ua,
-		diago.WithTransport(diago.Transport{Transport: "tls", BindHost: c.BindHost, BindPort: 0}),
+		diago.WithTransport(diago.Transport{Transport: "tls", BindHost: c.BindHost, BindPort: c.BindPort}),
 		diago.WithLogger(quiet),
 		diago.WithServerRequestMiddleware(func(_ sipgo.RequestHandler) sipgo.RequestHandler {
 			return func(req *sip.Request, tx sip.ServerTransaction) {

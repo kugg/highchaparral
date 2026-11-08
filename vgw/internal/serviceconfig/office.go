@@ -8,13 +8,9 @@ package serviceconfig
 import (
 	"bytes"
 	"errors"
-	"io"
 	"os"
-	"os/user"
 	"regexp"
-	"strconv"
 	"strings"
-	"syscall"
 )
 
 const (
@@ -96,40 +92,19 @@ func ParseOffice(raw []byte) (OfficeAccount, error) {
 		Password: []byte(values[2]), Extension: values[3], TLSName: OfficeTLSName}, nil
 }
 
-// ReadOffice enforces a separately owned office directory and an exact
-// root:vgw-office 0640 single-linked regular file. The path is fixed, never
-// supplied by a browser, SIP identity, dialplan or environment variable.
-func ReadOffice() (OfficeAccount, error) {
-	var empty OfficeAccount
-	group, err := user.LookupGroup(OfficeGroupName)
+// ReadOfficeWithOptions uses a separately provisioned root:selected-GID
+// path, not browser/SIP identity. The reviewed registrar/TLS name stay fixed.
+func ReadOfficeWithOptions(options RuntimeOptions) (OfficeAccount, error) {
+	if !options.Valid() || options.UID != uint32(os.Geteuid()) || options.GID != uint32(os.Getegid()) {
+		return OfficeAccount{}, reject()
+	}
+	raw, err := readProtected(options.ConfigPath, options.UID, options.GID, 1024)
 	if err != nil {
-		return empty, reject()
-	}
-	parsed, err := strconv.ParseUint(group.Gid, 10, 32)
-	if err != nil {
-		return empty, reject()
-	}
-	gid := uint32(parsed)
-	dir, err := os.Lstat(OfficeDirectory)
-	if err != nil || !owned(dir, 0, gid, 0750, false) {
-		return empty, reject()
-	}
-	entry, err := os.Lstat(OfficePath)
-	if err != nil || !owned(entry, 0, gid, 0640, true) || entry.Size() > 1024 {
-		return empty, reject()
-	}
-	file, err := os.OpenFile(OfficePath, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
-	if err != nil {
-		return empty, reject()
-	}
-	defer file.Close()
-	opened, err := file.Stat()
-	if err != nil || !os.SameFile(entry, opened) || !owned(opened, 0, gid, 0640, true) || opened.Size() > 1024 {
-		return empty, reject()
-	}
-	raw, err := io.ReadAll(io.LimitReader(file, 1025))
-	if err != nil || len(raw) > 1024 {
-		return empty, reject()
+		return OfficeAccount{}, err
 	}
 	return ParseOffice(raw)
+}
+
+func ReadOffice() (OfficeAccount, error) {
+	return ReadOfficeWithOptions(DefaultOfficeRuntimeOptions())
 }
