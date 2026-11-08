@@ -4,7 +4,8 @@
     {
       "path": "vgw/security/claims/ari-peer.v2.json",
       "resources": [
-        "vgw/security/claims/ari-peer.feature"
+        "vgw/security/claims/ari-peer.feature",
+        "vgw/security/evaluator-requirements.json"
       ]
     }
   ]

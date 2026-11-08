@@ -62,14 +62,14 @@
     "trust_binding",
     "target"
   ],
-  "check_specs_sha256": "61cd61e772c360c47170e1a0a7c36514634599842068cc244e190852a7a52a7f",
+  "check_specs_sha256": "d11e451398fa6d008fdd34202b83d740bfa615ee30672396f2977fc7d572fd08",
   "formal": {
     "required": true,
     "profile_sha256": "00156e5b270f6b3e3d3a11cda8ee9de2fc37d7893e5153010653c6be1c470f1a",
     "source_sha256": "c0e72500c8b119a8ce3dd90f77da873bd0bfd77928873ef050ff5e9667b04f1b",
     "scope": "Finite authenticated-peer protocol; cryptography, process identity and deployment remain separate obligations."
   },
-  "evaluator_manifest_sha256": "563496f1aff6122ea84ab9b43458a1ad5ff4b6609959662b58cce02435ec2547",
+  "evaluator_manifest_sha256": "1c49b28c8787586270e80f0efb47d15c77e49c68c42256ac109669c7871bd6dc",
   "covered_occurrences": [],
   "lineage": [
     {
