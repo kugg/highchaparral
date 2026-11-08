@@ -77,7 +77,8 @@
       "parent_id": "VGW-ARI-PEER-001",
       "parent_version": 1,
       "parent_specification_reference": "JER-13 contract v7 and factory claim proposal v1",
-      "reason": "Move specification beside product code and replace prior proposed/missing implementation binding with explicit current files; property and all obligation predicates/behaviors unchanged."
+      "reason": "Move specification beside product code and replace prior proposed/missing implementation binding with explicit current files; property and all obligation predicates/behaviors unchanged.",
+      "parent_specification_sha256": "0bf8d97e2e2289451ab0a9f6ce0c139d86e47d779239795c3d0784684bfd2875"
     }
   ],
   "required_runtime_evidence": "Actual artifact/configuration/peer/ownership correspondence and supplied E2E journey remain separate verification obligations."
