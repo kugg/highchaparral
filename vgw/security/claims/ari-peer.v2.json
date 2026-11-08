@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "id": "VGW-ARI-PEER-001",
+  "version": 2,
+  "owner": "JER-13",
+  "property": "authenticated-peer-before-credential",
+  "approval": "Proposed product-owned specification. No control coverage, independent approval or deployed remediation is implied.",
+  "scope": "VGW ARI HTTPS/WSS client, enumerated service/lab/probe callers",
+  "obligations": [
+    {
+      "id": "VGW-ARI-PEER-001-SEC",
+      "kind": "security",
+      "predicate": "credential_release_implies_authenticated_peer",
+      "checks": [
+        "ari-negative",
+        "ari-impostor"
+      ]
+    },
+    {
+      "id": "VGW-ARI-PEER-001-BUS",
+      "kind": "business",
+      "predicate": "valid_peer_subscription_and_cleanup_remain_reachable",
+      "checks": [
+        "ari-positive"
+      ]
+    },
+    {
+      "id": "VGW-ARI-PEER-001-ARCH",
+      "kind": "architecture",
+      "predicate": "all_callers_use_one_authenticated_transport",
+      "checks": [
+        "ari-boundary",
+        "provisioning"
+      ]
+    }
+  ],
+  "bindings": [
+    "vgw/internal/asterisk/ari.go",
+    "vgw/cmd/vgw/byok.go",
+    "vgw/cmd/ari-browser-probe/main.go",
+    "vgw/cmd/ari-probe/main.go",
+    "vgw/cmd/ari-media-probe/main.go",
+    "vgw/cmd/local-ari-lab/main.go",
+    "vgw/internal/serviceconfig/runtime.go"
+  ],
+  "required_behaviors": [
+    "valid_peer_subscription",
+    "owned_cleanup"
+  ],
+  "prohibited_behaviors": [
+    "credentials_to_impostor",
+    "plaintext_fallback"
+  ],
+  "exceptions": [],
+  "invalidation": [
+    "source",
+    "evaluator",
+    "profile",
+    "dependency",
+    "artifact",
+    "configuration",
+    "trust_binding",
+    "target"
+  ],
+  "check_specs_sha256": "d11e451398fa6d008fdd34202b83d740bfa615ee30672396f2977fc7d572fd08",
+  "formal": {
+    "required": true,
+    "profile_sha256": "00156e5b270f6b3e3d3a11cda8ee9de2fc37d7893e5153010653c6be1c470f1a",
+    "source_sha256": "c0e72500c8b119a8ce3dd90f77da873bd0bfd77928873ef050ff5e9667b04f1b",
+    "scope": "Finite authenticated-peer protocol; cryptography, process identity and deployment remain separate obligations."
+  },
+  "evaluator_manifest_sha256": "1c49b28c8787586270e80f0efb47d15c77e49c68c42256ac109669c7871bd6dc",
+  "covered_occurrences": [],
+  "lineage": [
+    {
+      "relation": "supersedes",
+      "parent_id": "VGW-ARI-PEER-001",
+      "parent_version": 1,
+      "parent_specification_reference": "JER-13 contract v7 and factory claim proposal v1",
+      "reason": "Move specification beside product code and replace prior proposed/missing implementation binding with explicit current files; property and all obligation predicates/behaviors unchanged.",
+      "parent_specification_sha256": "0bf8d97e2e2289451ab0a9f6ce0c139d86e47d779239795c3d0784684bfd2875"
+    }
+  ],
+  "required_runtime_evidence": "Actual artifact/configuration/peer/ownership correspondence and supplied E2E journey remain separate verification obligations."
+}
