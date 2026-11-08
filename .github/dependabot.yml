@@ -1,9 +1,9 @@
-# Daily dependency update PRs for every ecosystem in this repo.
+# Daily dependency update PRs for each managed ecosystem in this repo.
 #
 # Safety model: Dependabot only OPENS pull requests. Nothing is merged
 # automatically. Every update PR must pass the existing test suites
 # (vgw-standalone.yml, vgw-softphone.yml) and the security gate
-# (dependency-audit.yml: govulncheck + npm audit + pip-audit) before a
+# (dependency-audit.yml: govulncheck + npm audit) before a
 # human reviews it. Major-version bumps arrive as their own PRs; minor and
 # patch bumps are grouped per ecosystem to keep the daily volume down.
 version: 2
@@ -71,20 +71,6 @@ updates:
         update-types:
           - "minor"
           - "patch"
-
-  # Python (Flask signing fixture)
-  - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "daily"
-      time: "06:00"
-      timezone: "UTC"
-    open-pull-requests-limit: 10
-    commit-message:
-      prefix: "deps(pip)"
-    labels:
-      - "dependencies"
-      - "python"
 
   # GitHub Actions workflow pins (keeps the SHA-pinned actions current)
   - package-ecosystem: "github-actions"
