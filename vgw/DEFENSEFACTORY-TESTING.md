@@ -16,9 +16,9 @@ go build -trimpath -o /tmp/defensefactory-vgw ./cmd/vgw
 
 The final command uses VGW's default dry-run behavior. It establishes only executable startup in that mode. It does not establish SIP registration, provider connectivity, media/call behavior, a deployed gateway or remediated production scope. Real provider credentials, registration and attended call commands are outside this baseline import.
 
-## Known baseline gap
+## Historical baseline gap (resolved in current source)
 
-The snapshot does not include the parent deployment tree. `internal/serviceconfig.TestTwinAnsibleTemplateRendersTheProductionParserContract` expects `deploy/ansible/templates/voip-gateway.config.j2` at a parent-relative path and fails when that template is absent. The full Go suite therefore does not pass in this standalone import. Do not skip or silently rewrite that check to manufacture green evidence. Treat template/configuration correspondence as unresolved until the relevant source and approved binding are supplied.
+The original pinned snapshot did not include its parent deployment tree: `internal/serviceconfig.TestTwinAnsibleTemplateRendersTheProductionParserContract` failed when the parent-relative `deploy/ansible/templates/voip-gateway.config.j2` was absent. This failure remains historical evidence for that snapshot, not a green baseline result. The current standalone VGW module bundles an identical eight-placeholder template at `vgw/deploy/ansible/templates/voip-gateway.config.j2` and the test resolves it within its own module. The full unskipped Go race suite passed locally and in standalone Ubuntu CI for [PR #60](https://github.com/kugg/highchaparral/pull/60). No Ansible apply, PBX media or provider call is established by that source test.
 
 Some source README links also point to omitted parent documentation. Missing files are not covered by this import. The tests exercise local/synthetic peers; they are not proof of real provider or physical-device interoperability.
 

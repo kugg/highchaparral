@@ -74,9 +74,12 @@ deployment parameters. The historical provider one-shot has a spent
 call stage and is not retargeted by this runtime bootstrap. Tests
 must cover alternate UID/GID, file/runtime/office paths, loopback port,
 bad paths/ports, stale PID/socket and concurrent inode replacement,
-while preserving default dry-run and secret-redacted outcomes. A full
-standalone Go suite still needs the parent Ansible template that the
-public security-test snapshot intentionally omits.
+while preserving default dry-run and secret-redacted outcomes. The
+historical security-test snapshot omitted its parent Ansible template;
+the current module bundles the reviewed eight-field template at
+`deploy/ansible/templates/voip-gateway.config.j2` and the full
+unskipped Go race suite passes in a standalone checkout. This does
+not establish a real Ansible deployment or media call.
 
 ## Hardcoded-literal inventory and CI contract
 
