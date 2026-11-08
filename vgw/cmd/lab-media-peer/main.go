@@ -31,9 +31,6 @@ func oneCall(ctx context.Context, port int) (result error) {
 		diago.WithTransport(diago.Transport{Transport: "udp", BindHost: "127.0.0.1", BindPort: 0}),
 		diago.WithMediaConfig(diago.MediaConfig{Codecs: []media.Codec{media.CodecAudioAlaw}}),
 		diago.WithLogger(safesip.Logger))
-	if err := client.ServeBackground(ctx, func(*diago.DialogServerSession) {}); err != nil {
-		return errors.New("synthetic SIP media listener unavailable")
-	}
 	call, err := client.Invite(ctx, sip.Uri{User: "desk", Host: "127.0.0.1", Port: port}, diago.InviteOptions{})
 	if err != nil {
 		return errors.New("synthetic SIP call unavailable")

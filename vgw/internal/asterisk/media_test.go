@@ -303,9 +303,6 @@ func TestMockSIPToIndependentAsteriskMediaRoundTrip(t *testing.T) {
 		diago.WithTransport(diago.Transport{Transport: "udp", BindHost: "127.0.0.1", BindPort: 0}),
 		diago.WithMediaConfig(diago.MediaConfig{Codecs: []media.Codec{media.CodecAudioAlaw}}),
 		diago.WithLogger(safesip.Logger))
-	if err := d.ServeBackground(ctx, func(*diago.DialogServerSession) {}); err != nil {
-		t.Fatal(err)
-	}
 	call, err := d.Invite(ctx, sip.Uri{User: "desk", Host: "127.0.0.1", Port: port}, diago.InviteOptions{})
 	if err != nil {
 		t.Fatal("synthetic SIP INVITE failed")

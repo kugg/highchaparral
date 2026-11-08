@@ -43,9 +43,6 @@ func TestInviteAnswerBye(t *testing.T) {
 		diago.WithTransport(diago.Transport{Transport: "udp", BindHost: "127.0.0.1", BindPort: 0}),
 		diago.WithMediaConfig(diago.MediaConfig{Codecs: []media.Codec{media.CodecAudioAlaw}}),
 	)
-	if err := client.ServeBackground(ctx, func(*diago.DialogServerSession) {}); err != nil {
-		t.Fatal(err)
-	}
 	var answered bool
 	dialog, err := client.Invite(ctx, sip.Uri{User: "echo", Host: "127.0.0.1", Port: port}, diago.InviteOptions{
 		OnResponse: func(res *sip.Response) error {
