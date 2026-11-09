@@ -10,7 +10,8 @@
     {"id": "unvalidated-media-address", "definition": "Negotiated or received media is routed through an unvalidated address or codec boundary."},
     {"id": "non-atomic-reservation", "definition": "Concurrent or stale reservation transitions grant conflicting ownership."},
     {"id": "unsafe-recovery", "definition": "Recovery reuses a resource while a previous operation may still own it."},
-    {"id": "stuck-call-state", "definition": "An unsettled operation holds admission indefinitely without bounded recovery."}
+    {"id": "stuck-call-state", "definition": "An unsettled operation holds admission indefinitely without bounded recovery."},
+    {"id": "failed-registration-lifecycle", "definition": "A failed browser SIP registration retains a credential-bearing agent or prevents safe manual retry."}
   ],
   "claims": [
     {"id": "VGW-ARI-PEER-001",
@@ -48,7 +49,11 @@
     {"id": "VGW-BYOK-RECOVERY-001",
      "statement": "An ambiguous call cannot monopolize admission indefinitely; bounded recovery must exclude a still-live prior provider leg before the slot is reused.",
      "preserves": ["Calls remain exclusive during the recovery bound and new legitimate reservations can eventually proceed."],
-     "bug_classes": ["stuck-call-state", "unsafe-recovery"], "fences": ["VGW-FENCE-RECOVERY", "VGW-FENCE-INTENT"]}
+     "bug_classes": ["stuck-call-state", "unsafe-recovery"], "fences": ["VGW-FENCE-RECOVERY", "VGW-FENCE-INTENT"]},
+    {"id": "VGW-SOFTPHONE-REG-001",
+     "statement": "A failed browser SIP start or registration stops its credential-bearing agent before enabling manual retry; uncertain cleanup prevents a second agent.",
+     "preserves": ["A valid PBX registration and numeric call remain reachable without automatic retry."],
+     "bug_classes": ["failed-registration-lifecycle"], "fences": ["VGW-FENCE-SOFTPHONE-REG", "VGW-FENCE-INTENT"]}
   ],
   "fences": [
     {"id": "VGW-FENCE-RESERVATION", "kind": "hard", "mechanism": "test", "check": "vgw-reservation-contract", "controls": [
@@ -76,6 +81,9 @@
     ]},
     {"id": "VGW-FENCE-RECOVERY", "kind": "hard", "mechanism": "test", "check": "vgw-recovery-contract", "controls": [
       {"path": "internal/byok/reservation_test.go", "selector": "func TestBYOKActiveSlotAutoRecoversAfterTTL(", "introduced": {"repository": "kugg/highchaparral", "ref": "0a99b49b4d293a42b7679958a016519af1a98b0e", "path": "vgw/internal/byok/reservation_test.go"}}
+    ]},
+    {"id": "VGW-FENCE-SOFTPHONE-REG", "kind": "hard", "mechanism": "test", "check": "vgw-softphone-registration-contract", "controls": [
+      {"path": "softphone/test/browser.test.mjs", "selector": "test(\"failed REGISTER stops the agent and permits an explicit retry\"", "introduced": {"repository": "kugg/highchaparral", "ref": "36354f49c59a6b36b8c97527fcf84651ef1bd070", "path": "vgw/softphone/test/browser.test.mjs"}}
     ]},
     {"id": "VGW-FENCE-INTENT", "kind": "soft", "mechanism": "guidance", "controls": [
       {"path": "AGENTS.md", "selector": "Developers and agents maintain", "introduced": {"repository": "kugg/highchaparral", "ref": "f78145c1acf746d9cd17801ebc4fb9b608a523cf", "path": "vgw/AGENTS.md"}}
