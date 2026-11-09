@@ -95,10 +95,11 @@
     const user = accountUser.value;
     const password = accountPassword.value;
     accountPassword.value = "";
+    let agent;
     try {
       const uri = SIP.UserAgent.makeURI(`sip:${user}@${cfg.sipDomain}`);
       if (!uri) throw Error("invalid URI");
-      const agent = new SIP.UserAgent({
+      agent = new SIP.UserAgent({
         uri,
         authorizationUsername: user,
         authorizationPassword: password,
@@ -128,9 +129,21 @@
       await registerer.register();
       controls();
     } catch {
-      setStatus("PBX registration failed; check WSS trust and account", "err");
       // Never automatically retry a failed SIP transaction.
-      if (!ua) connectButton.disabled = false;
+      registered = false;
+      if (agent) {
+        try { await agent.stop(); }
+        catch {
+          // A failed stop leaves ownership uncertain: do not create a second agent.
+          ua = agent;
+          setStatus("PBX cleanup uncertain; reload before retrying", "err");
+          controls();
+          return;
+        }
+      }
+      ua = undefined;
+      setStatus("PBX registration failed; check WSS trust and account", "err");
+      controls();
     }
   }
   async function reserve(planned) {
