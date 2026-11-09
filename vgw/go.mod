@@ -7,7 +7,7 @@ require (
 	github.com/emiago/sipgo v1.7.2
 	github.com/gobwas/ws v1.5.0
 	github.com/icholy/digest v1.2.0
-	github.com/pion/rtp v1.10.1
+	github.com/pion/rtp v1.10.6
 )
 
 require (
