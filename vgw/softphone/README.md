@@ -77,6 +77,7 @@ licensed and their generated binaries are kept out of Git.
 
 For each release, use the
 [isolated twin E2E release test plan](../docs/softphone-twin-e2e-release-plan.md).
-It distinguishes runnable offline checks from the as-yet-unbuilt
-browser→Asterisk→VGW→synthetic-provider fixture and refuses an E2E
-pass based on browser mocks alone.
+The [standalone local Docker regression](../regression/browser_ari/README.md)
+now exercises real Chromium, Asterisk and Go's *synthetic local answer*
+with browser BYE and owned cleanup; it does not exercise the full BYOK
+reservation or provider SIP/TLS/media gates in that plan.

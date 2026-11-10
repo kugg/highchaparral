@@ -23,10 +23,14 @@ configuration and SSH identity do not belong in this public repository.
   to `hg.eventphone.de:5061`. An initial operator-approved in-network
   INVITE returned 404; one separately authorized game call was answered
   and return PCMA arrived from the SDP-advertised source. Its BYE was
-  **unconfirmed**, despite Unregister succeeding; call teardown is not
-  considered verified. Both owner-only ignored one-use result stages
-  are preserved and may not be replayed. No call audio was captured or
-  transcribed.
+  **unconfirmed**, despite Unregister succeeding. Both owner-only
+  one-use stages remain spent; that game's teardown is still ambiguous.
+  A distinct, subsequently approved automated Network Announcement
+  one-shot on 2026-10-25 returned fixed `pass` evidence: REGISTER,
+  answered INVITE, PCMA from the SDP source, library BYE and Unregister.
+  Its independent owner-only stage is also spent and cannot be replayed.
+  No call audio was captured or transcribed. See
+  [the final evidence boundaries](eventphone-call-evidence.md).
 - Provider RTP ports, inbound SIP connection reuse, NAT traversal and
   source addresses for a **deployed gateway** remain untested. One
   standalone client received RTP, but a fixed host/WAN UDP range is
@@ -38,8 +42,9 @@ configuration and SSH identity do not belong in this public repository.
   service by opening a firewall port. Office WAN is shared; WireGuard is
   shared fleet administration, not an application trust boundary.
 - Remaining release controls: verified real-provider TLS/auth and
-  codec/media-source policy **through the integrated gateway**, resolving
-  the ambiguous provider BYE, in-process missing-ACK cancellation, owned
+  codec/media-source policy **through the integrated gateway**, a clean
+  integrated BYE (the old game BYE remains ambiguous despite the separate
+  announcement success), in-process missing-ACK cancellation, owned
   ARI orphan recovery on failed DELETE, and separate Asterisk/WebRTC
   DTLS-enabled OpenSSL parity where browser service is required. Do not
   place credentials in logs, code, mock fixtures or external reviews.

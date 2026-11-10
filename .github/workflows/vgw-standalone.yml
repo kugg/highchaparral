@@ -23,6 +23,21 @@ jobs:
       - name: Exercise complete standalone module (including Ansible contract)
         working-directory: vgw
         run: go test -race -count=1 -timeout=120s ./...
+      - name: Check isolated browser ARI regression source without Docker
+        working-directory: vgw
+        run: |
+          python3 -B -m unittest discover -s regression/browser_ari -p 'test_*.py'
+          python3 -B regression/browser_ari/runner.py
+      - name: Verify source-only delivery/attestation gates without QEMU or Noll
+        working-directory: vgw
+        run: |
+          python3 -B -m unittest discover -s deploy/pipeline -p 'test_*.py'
+          python3 -B deploy/pipeline/release.py
+          python3 -B deploy/pipeline/qemu_stage.py
+          python3 -B deploy/pipeline/promote.py
+      - name: Check guest-only internal-network helper on Linux
+        working-directory: vgw/regression/browser_ari/default
+        run: go test ./... && go vet ./...
       - name: Detect intermittent synthetic loopback INVITE failures (JER-23)
         working-directory: vgw
         run: go test -race -count=200 -timeout=120s -run '^TestNormalCallAndBye$' ./internal/calls

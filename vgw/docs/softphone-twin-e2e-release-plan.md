@@ -173,9 +173,13 @@ rollback, fsynced owner-only attempt records and bounded timeouts:
    loosen the production allowlist. If the test can only inject a
    stub provider, label gate C **BLOCKED** for full provider E2E.
 
-These fixtures and an integrated one-use runner **do not exist yet**;
-this section is an implementation checklist, not runnable apply
-instructions. Before any stage or test that might carry credentials,
+The narrower [local synthetic browser→Asterisk→VGW regression](../regression/browser_ari/README.md)
+now has a portable source fixture and an explicit one-use Docker Desktop
+runner. It does **not** add a provider SIP/TLS/Digest mock, same-origin BYOK
+reservation or verified two-direction browser RTP. Consequently it does
+not satisfy this section's full BYOK E2E fixture or gate C, and the
+provider fixture work above remains an implementation checklist. Before
+any stage or test that might carry credentials,
 review inbound log/audit/template/SQL/HTTP and SIP error-text sinks,
 not just data sent to a provider.
 

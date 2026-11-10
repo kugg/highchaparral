@@ -19,4 +19,11 @@ The user performs the penetration test. Findings are triaged in [the Defense Fac
 
 No scheduler or unattended remediation worker is installed for this demo. GitHub Actions runs the full standalone VGW Go race suite and both offline softphone browser cases on every PR. These checks do not deploy, contact a provider or replace the user's manual penetration test. The redacted literal inventory remains available as an optional manual tool, with its package tests included in the Go suite. A baseline import is setup, not a remediation. Same-host verification is explicitly a rehearsal until independent identities and controlled acceptance permissions are evidenced. Merge alone does not establish deployed remediation.
 
+The [VGW delivery structure](vgw/deploy/pipeline/README.md) now provides
+a local Docker browser/Asterisk/VGW synthetic regression, content-pinned
+candidate artifacts, and an opt-in QEMU user-network staging path for those
+same committed bytes. Noll is the intended production promotion target,
+but the gate deliberately refuses deployment while full Eventphone/media
+and Noll-specific owner/rollback preconditions remain unverified.
+
 See [VGW testing notes](vgw/DEFENSEFACTORY-TESTING.md) for host commands, known snapshot limitations and safe scope. The full local factory workspace is `~/devel/defensefactory`; reusable skills are installed from its `skills/` directory.
