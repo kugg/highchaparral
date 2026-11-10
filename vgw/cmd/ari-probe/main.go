@@ -6,19 +6,30 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"flag"
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
 	"time"
 
 	"example.com/ata/voip-gateway/internal/asterisk"
+	"example.com/ata/voip-gateway/internal/serviceconfig"
 )
 
 func main() {
+	peerPath := flag.String("ari-peer-cert", "", "absolute owner-controlled public leaf certificate path")
+	ariPort := flag.Int("ari-port", 8089, "local IPv4-loopback ARI HTTPS port")
+	flag.Parse()
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
+	peer, err := serviceconfig.ReadLabARIPeerCertificate(*peerPath)
+	if err != nil {
+		slog.Error("local ARI peer provisioning unavailable")
+		os.Exit(1)
+	}
 	client, err := asterisk.New(asterisk.Config{
-		BaseURL: "http://127.0.0.1:8088", Username: os.Getenv("GATEWAY_LAB_ARI_USER"),
+		BaseURL: fmt.Sprintf("https://127.0.0.1:%d", *ariPort), PeerCertificate: peer, Username: os.Getenv("GATEWAY_LAB_ARI_USER"),
 		Password: os.Getenv("GATEWAY_LAB_ARI_PASSWORD"), Timeout: 2 * time.Second,
 	})
 	if err != nil {

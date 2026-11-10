@@ -15,7 +15,7 @@ import (
 )
 
 const DefaultOfficePort uint16 = 5061
-const DefaultARIBaseURL = "http://127.0.0.1:8088"
+const DefaultARIBaseURL = "https://127.0.0.1:8089"
 
 type RuntimeOptions struct {
 	UID, GID    uint32
@@ -69,7 +69,7 @@ func validAbs(path string) bool {
 
 func validARIURL(raw string) bool {
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" ||
+	if err != nil || u.Scheme != "https" || u.Hostname() != "127.0.0.1" ||
 		u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.String() != raw {
 		return false
 	}

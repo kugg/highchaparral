@@ -16,12 +16,14 @@ import (
 
 	"example.com/ata/voip-gateway/internal/asterisk"
 	"example.com/ata/voip-gateway/internal/calls"
+	"example.com/ata/voip-gateway/internal/serviceconfig"
 )
 
 func main() {
 	sipPort := flag.Int("sip-port", 5080, "local IPv4-loopback UDP SIP port")
-	ariPort := flag.Int("ari-port", 8088, "local IPv4-loopback Asterisk ARI HTTP port")
+	ariPort := flag.Int("ari-port", 8089, "local IPv4-loopback Asterisk ARI HTTPS port")
 	ackTimeout := flag.Duration("ack-timeout", 5*time.Second, "bounded ACK deadline")
+	peerPath := flag.String("ari-peer-cert", "", "absolute owner-controlled public leaf certificate path")
 	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -36,8 +38,13 @@ func main() {
 		slog.Error("guest-only ARI credential ownership refused")
 		os.Exit(1)
 	}
+	peer, err := serviceconfig.ReadLabARIPeerCertificate(*peerPath)
+	if err != nil {
+		slog.Error("local ARI peer certificate unavailable")
+		os.Exit(1)
+	}
 	ari, err := asterisk.New(asterisk.Config{
-		BaseURL:  fmt.Sprintf("http://127.0.0.1:%d", *ariPort),
+		BaseURL: fmt.Sprintf("https://127.0.0.1:%d", *ariPort), PeerCertificate: peer,
 		Username: ariUser,
 		Password: ariPass,
 		Timeout:  2 * time.Second,

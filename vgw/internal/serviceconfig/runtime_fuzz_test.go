@@ -8,7 +8,7 @@ func FuzzPrivateConfigParsers(f *testing.F) {
 	f.Add([]byte(fixture))
 	f.Add([]byte(syntheticBYOK))
 	f.Add([]byte(syntheticOffice))
-	f.Add([]byte("ARI_BASE_URL=http://127.0.0.1:8088\r\nX-Log: forged\n"))
+	f.Add([]byte("ARI_BASE_URL=https://127.0.0.1:8088\r\nX-Log: forged\n"))
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		if len(raw) > 8192 {
 			t.Skip()

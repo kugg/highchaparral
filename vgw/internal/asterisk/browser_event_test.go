@@ -49,7 +49,7 @@ func TestBrowserARIChannelReadbackDoesNotTrustEventAlone(t *testing.T) {
 	var nonceValue = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	statusCode := http.StatusOK
 	var requests int
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
 		user, password, ok := r.BasicAuth()
 		if r.Method != http.MethodGet || (r.URL.Path != "/ari/channels/1693496751.43" &&
@@ -71,7 +71,7 @@ func TestBrowserARIChannelReadbackDoesNotTrustEventAlone(t *testing.T) {
 		_, _ = w.Write([]byte(response))
 	}))
 	defer server.Close()
-	client, err := New(Config{BaseURL: server.URL, Username: "synthetic", Password: "only-for-tests",
+	client, err := New(Config{BaseURL: server.URL, PeerCertificate: server.Certificate(), Username: "synthetic", Password: "only-for-tests",
 		Timeout: time.Second, Target: BrowserIngress})
 	if err != nil {
 		t.Fatal(err)
@@ -101,7 +101,7 @@ func TestBrowserARIChannelReadbackDoesNotTrustEventAlone(t *testing.T) {
 	if ErrorCategory(client.VerifyBrowserChannel(context.Background(), BrowserStart{ChannelID: "a..b"})) != "browser-admission" || requests != 6 {
 		t.Fatal("parent path segment reached ARI")
 	}
-	lab, err := New(Config{BaseURL: server.URL, Username: "synthetic", Password: "only-for-tests",
+	lab, err := New(Config{BaseURL: server.URL, PeerCertificate: server.Certificate(), Username: "synthetic", Password: "only-for-tests",
 		Timeout: time.Second, Target: LabEcho})
 	if err != nil {
 		t.Fatal(err)

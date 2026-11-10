@@ -102,29 +102,29 @@ func TestPrivateARIAndBindOptionsRejectUnsafeOverrides(t *testing.T) {
 	if err != nil || defaultBYOK.ARIBaseURL != DefaultARIBaseURL || defaultBYOK.BindPort != 0 {
 		t.Fatal("legacy BYOK profile lost secure defaults")
 	}
-	augmented := syntheticBYOK + "ARI_BASE_URL=http://127.0.0.1:18088\n" +
+	augmented := syntheticBYOK + "ARI_BASE_URL=https://127.0.0.1:18088\n" +
 		"SIP_BIND_IPV4=127.0.0.1\nSIP_BIND_PORT=15061\n" +
 		"ERROR_LOG_PATH=/var/log/vgw_error.log\n"
 	parsed, err := ParseBYOK([]byte(augmented))
-	if err != nil || parsed.ARIBaseURL != "http://127.0.0.1:18088" ||
+	if err != nil || parsed.ARIBaseURL != "https://127.0.0.1:18088" ||
 		parsed.BindIPv4 != "127.0.0.1" || parsed.BindPort != 15061 ||
 		parsed.ErrorLogPath != "/var/log/vgw_error.log" {
 		t.Fatal("private BYOK runtime overrides not parsed")
 	}
 	for _, bad := range []string{
-		strings.Replace(augmented, "http://127.0.0.1:18088", "http://192.0.2.1:18088", 1),
-		strings.Replace(augmented, "http://127.0.0.1:18088", "http://user:pass@127.0.0.1:18088", 1),
+		strings.Replace(augmented, "https://127.0.0.1:18088", "https://192.0.2.1:18088", 1),
+		strings.Replace(augmented, "https://127.0.0.1:18088", "https://user:pass@127.0.0.1:18088", 1),
 		strings.Replace(augmented, "SIP_BIND_PORT=15061", "SIP_BIND_PORT=015061", 1),
 		strings.Replace(augmented, "ERROR_LOG_PATH=/var/log/vgw_error.log", "ERROR_LOG_PATH=../../escape", 1),
-		augmented + "ARI_BASE_URL=http://127.0.0.1:18088\n",
+		augmented + "ARI_BASE_URL=https://127.0.0.1:18088\n",
 	} {
 		if _, err := ParseBYOK([]byte(bad)); err == nil {
 			t.Fatal("unsafe ARI, bind or log selector accepted")
 		}
 	}
-	service := fixture + "ARI_BASE_URL=http://127.0.0.1:18088\nSIP_BIND_PORT=15061\n"
+	service := fixture + "ARI_BASE_URL=https://127.0.0.1:18088\nSIP_BIND_PORT=15061\n"
 	parsedService, err := Parse([]byte(service))
-	if err != nil || parsedService.ARIBaseURL != "http://127.0.0.1:18088" || parsedService.BindPort != 15061 {
+	if err != nil || parsedService.ARIBaseURL != "https://127.0.0.1:18088" || parsedService.BindPort != 15061 {
 		t.Fatal("service config did not produce ARI/bind settings")
 	}
 }

@@ -59,6 +59,9 @@
         "unauthenticated-peer"
       ],
       "fences": [
+        "VGW-FENCE-ARI-TRANSPORT",
+        "VGW-FENCE-ARI-PROVISION",
+        "VGW-FENCE-ARI-CALLERS",
         "VGW-FENCE-INTENT"
       ]
     },
@@ -121,6 +124,8 @@
       ],
       "fences": [
         "VGW-FENCE-ARI-ADMISSION",
+        "VGW-FENCE-ARI-TRANSPORT",
+        "VGW-FENCE-ARI-CALLERS",
         "VGW-FENCE-INTENT"
       ]
     },
@@ -214,6 +219,57 @@
     }
   ],
   "fences": [
+    {
+      "id": "VGW-FENCE-ARI-TRANSPORT",
+      "kind": "hard",
+      "mechanism": "test",
+      "check": "vgw-ari-transport",
+      "controls": [
+        {
+          "path": "internal/asterisk/peer_test.go",
+          "selector": "func TestAuthenticatedARIRejectsImpostorsOnHTTPAndWebSocket(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "365f72c039661349ce0dd41262b2d9eec8824c0b",
+            "path": "vgw/internal/asterisk/peer_test.go"
+          }
+        }
+      ]
+    },
+    {
+      "id": "VGW-FENCE-ARI-PROVISION",
+      "kind": "hard",
+      "mechanism": "test",
+      "check": "vgw-ari-provision",
+      "controls": [
+        {
+          "path": "internal/serviceconfig/ari_peer_test.go",
+          "selector": "func TestARIPeerProvisioningUsesRootlessRuntimeIdentityAndProtectedFiles(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "6c79e387cfcac019b38f55c77a6ba5d639c8402c",
+            "path": "vgw/internal/serviceconfig/ari_peer_test.go"
+          }
+        }
+      ]
+    },
+    {
+      "id": "VGW-FENCE-ARI-CALLERS",
+      "kind": "hard",
+      "mechanism": "test",
+      "check": "vgw-ari-callers",
+      "controls": [
+        {
+          "path": "internal/asterisk/caller_policy_test.go",
+          "selector": "func TestAllARICallersProvideExplicitPeerIdentity(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "6c79e387cfcac019b38f55c77a6ba5d639c8402c",
+            "path": "vgw/internal/asterisk/caller_policy_test.go"
+          }
+        }
+      ]
+    },
     {
       "id": "VGW-FENCE-RESERVATION",
       "kind": "hard",
