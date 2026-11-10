@@ -2,91 +2,439 @@
   "schema_version": 2,
   "component": "VGW",
   "bug_classes": [
-    {"id": "unauthenticated-peer", "definition": "A sensitive operation trusts a peer whose identity has not been authenticated."},
-    {"id": "replayed-authorization", "definition": "A one-use authorization is replayed or rebound to a different operation."},
-    {"id": "credential-exposure", "definition": "Secret credential material crosses an unauthorized observation or data boundary."},
-    {"id": "cross-origin-reservation", "definition": "An untrusted origin or local socket principal obtains reservation authority."},
-    {"id": "untrusted-event-admission", "definition": "Unvalidated event data is treated as control authority."},
-    {"id": "unvalidated-media-address", "definition": "Negotiated or received media is routed through an unvalidated address or codec boundary."},
-    {"id": "non-atomic-reservation", "definition": "Concurrent or stale reservation transitions grant conflicting ownership."},
-    {"id": "unsafe-recovery", "definition": "Recovery reuses a resource while a previous operation may still own it."},
-    {"id": "stuck-call-state", "definition": "An unsettled operation holds admission indefinitely without bounded recovery."},
-    {"id": "failed-registration-lifecycle", "definition": "A failed browser SIP registration retains a credential-bearing agent or prevents safe manual retry."}
+    {
+      "id": "unauthenticated-peer",
+      "definition": "A sensitive operation trusts a peer whose identity has not been authenticated."
+    },
+    {
+      "id": "replayed-authorization",
+      "definition": "A one-use authorization is replayed or rebound to a different operation."
+    },
+    {
+      "id": "credential-exposure",
+      "definition": "Secret credential material crosses an unauthorized observation or data boundary."
+    },
+    {
+      "id": "cross-origin-reservation",
+      "definition": "An untrusted origin or local socket principal obtains reservation authority."
+    },
+    {
+      "id": "untrusted-event-admission",
+      "definition": "Unvalidated event data is treated as control authority."
+    },
+    {
+      "id": "unvalidated-media-address",
+      "definition": "Negotiated or received media is routed through an unvalidated address or codec boundary."
+    },
+    {
+      "id": "non-atomic-reservation",
+      "definition": "Concurrent or stale reservation transitions grant conflicting ownership."
+    },
+    {
+      "id": "unsafe-recovery",
+      "definition": "Recovery reuses a resource while a previous operation may still own it."
+    },
+    {
+      "id": "stuck-call-state",
+      "definition": "An unsettled operation holds admission indefinitely without bounded recovery."
+    },
+    {
+      "id": "privileged-service-identity",
+      "definition": "The credential-holding service process runs with a privileged identity (root UID/GID 0) because the service identity gate lacks a non-zero lower bound.",
+      "cwe": "CWE-250"
+    },
+    {
+      "id": "failed-registration-lifecycle",
+      "definition": "A failed browser SIP registration retains a credential-bearing agent or prevents safe manual retry."
+    }
   ],
   "claims": [
-    {"id": "VGW-ARI-PEER-001",
-     "statement": "Every credential-bearing ARI HTTP/WSS request authenticates the intended peer through the canonical transport before credentials are released; trust provisioning cannot introduce a downgrade.",
-     "preserves": ["Valid peer subscription, call lifecycle and owned cleanup remain reachable."],
-     "bug_classes": ["unauthenticated-peer"], "fences": ["VGW-FENCE-INTENT"]},
-    {"id": "VGW-BYOK-NONCE-001",
-     "statement": "A reservation nonce authorizes exactly one call to its bound destination; authoritative readback comes from authenticated ARI, never Stasis arguments.",
-     "preserves": ["A valid bound reservation can complete its intended call."],
-     "bug_classes": ["replayed-authorization", "unauthenticated-peer"], "fences": ["VGW-FENCE-RESERVATION", "VGW-FENCE-COORDINATOR", "VGW-FENCE-INTENT"]},
-    {"id": "VGW-BYOK-CRED-001",
-     "statement": "Provider credentials stay out of logs, browser SIP messages, ARI variables and errors; transient secrets are cleared after use.",
-     "preserves": ["Legitimate provider authentication uses the credential only through SIP/TLS."],
-     "bug_classes": ["credential-exposure"], "fences": ["VGW-FENCE-RESERVATION", "VGW-FENCE-COORDINATOR", "VGW-FENCE-PROVIDER", "VGW-FENCE-INTENT"]},
-    {"id": "VGW-BYOK-ORIGIN-001",
-     "statement": "Reservations require the configured HTTPS Origin/Host and client header; their Unix socket is owner-only 0600 with verified identity/link count and stale-socket refusal.",
-     "preserves": ["Legitimate same-origin reservations remain available."],
-     "bug_classes": ["cross-origin-reservation"], "fences": ["VGW-FENCE-ORIGIN", "VGW-FENCE-COORDINATOR", "VGW-FENCE-INTENT"]},
-    {"id": "VGW-ARI-ADMISSION-001",
-     "statement": "ARI uses the fixed IPv4 loopback destination and canonical authenticated transport, and validates all browser/Stasis admission fields before granting control.",
-     "preserves": ["Valid Stasis events and legitimate browser calls are admitted."],
-     "bug_classes": ["untrusted-event-admission", "unauthenticated-peer"], "fences": ["VGW-FENCE-ARI-ADMISSION", "VGW-FENCE-INTENT"]},
-    {"id": "VGW-PROVIDER-TLS-001",
-     "statement": "Provider transport requires TLS 1.2 or newer, trusted roots, hostname and host-allowlist validation; insecure verification cannot be enabled.",
-     "preserves": ["Valid provider TLS calls proceed."],
-     "bug_classes": ["unauthenticated-peer"], "fences": ["VGW-FENCE-TLS", "VGW-FENCE-PROVIDER", "VGW-FENCE-INTENT"]},
-    {"id": "VGW-PROVIDER-SDP-001",
-     "statement": "Provider media accepts only the permitted public PCMA answer, rejects private/loopback/multicast/unspecified addresses and multiple codecs, and admits RTP only from the negotiated source.",
-     "preserves": ["Valid public single-PCMA media remains usable."],
-     "bug_classes": ["unvalidated-media-address"], "fences": ["VGW-FENCE-MEDIA", "VGW-FENCE-PROVIDER", "VGW-FENCE-INTENT"]},
-    {"id": "VGW-BYOK-STATE-001",
-     "statement": "Reservation consumption and ownership transitions are atomic, prevent double-spend/TOCTOU grants, and retain exclusivity while teardown is unsettled.",
-     "preserves": ["A settled call releases its slot; any bounded recovery preserves exclusive call ownership."],
-     "bug_classes": ["non-atomic-reservation", "unsafe-recovery"], "fences": ["VGW-FENCE-RESERVATION", "VGW-FENCE-COORDINATOR", "VGW-FENCE-INTENT"]},
-    {"id": "VGW-BYOK-RECOVERY-001",
-     "statement": "An ambiguous call cannot monopolize admission indefinitely; bounded recovery must exclude a still-live prior provider leg before the slot is reused.",
-     "preserves": ["Calls remain exclusive during the recovery bound and new legitimate reservations can eventually proceed."],
-     "bug_classes": ["stuck-call-state", "unsafe-recovery"], "fences": ["VGW-FENCE-RECOVERY", "VGW-FENCE-INTENT"]},
-    {"id": "VGW-SOFTPHONE-REG-001",
-     "statement": "A failed browser SIP start or registration stops its credential-bearing agent before enabling manual retry; uncertain cleanup prevents a second agent.",
-     "preserves": ["A valid PBX registration and numeric call remain reachable without automatic retry."],
-     "bug_classes": ["failed-registration-lifecycle"], "fences": ["VGW-FENCE-SOFTPHONE-REG", "VGW-FENCE-INTENT"]}
+    {
+      "id": "VGW-ARI-PEER-001",
+      "statement": "Every credential-bearing ARI HTTP/WSS request authenticates the intended peer through the canonical transport before credentials are released; trust provisioning cannot introduce a downgrade.",
+      "preserves": [
+        "Valid peer subscription, call lifecycle and owned cleanup remain reachable."
+      ],
+      "bug_classes": [
+        "unauthenticated-peer"
+      ],
+      "fences": [
+        "VGW-FENCE-INTENT"
+      ]
+    },
+    {
+      "id": "VGW-BYOK-NONCE-001",
+      "statement": "A reservation nonce authorizes exactly one call to its bound destination; authoritative readback comes from authenticated ARI, never Stasis arguments.",
+      "preserves": [
+        "A valid bound reservation can complete its intended call."
+      ],
+      "bug_classes": [
+        "replayed-authorization",
+        "unauthenticated-peer"
+      ],
+      "fences": [
+        "VGW-FENCE-RESERVATION",
+        "VGW-FENCE-COORDINATOR",
+        "VGW-FENCE-INTENT"
+      ]
+    },
+    {
+      "id": "VGW-BYOK-CRED-001",
+      "statement": "Provider credentials stay out of logs, browser SIP messages, ARI variables and errors; transient secrets are cleared after use.",
+      "preserves": [
+        "Legitimate provider authentication uses the credential only through SIP/TLS."
+      ],
+      "bug_classes": [
+        "credential-exposure"
+      ],
+      "fences": [
+        "VGW-FENCE-RESERVATION",
+        "VGW-FENCE-COORDINATOR",
+        "VGW-FENCE-PROVIDER",
+        "VGW-FENCE-INTENT"
+      ]
+    },
+    {
+      "id": "VGW-BYOK-ORIGIN-001",
+      "statement": "Reservations require the configured HTTPS Origin/Host and client header; their Unix socket is owner-only 0600 with verified identity/link count and stale-socket refusal.",
+      "preserves": [
+        "Legitimate same-origin reservations remain available."
+      ],
+      "bug_classes": [
+        "cross-origin-reservation"
+      ],
+      "fences": [
+        "VGW-FENCE-ORIGIN",
+        "VGW-FENCE-COORDINATOR",
+        "VGW-FENCE-INTENT"
+      ]
+    },
+    {
+      "id": "VGW-ARI-ADMISSION-001",
+      "statement": "ARI uses the fixed IPv4 loopback destination and canonical authenticated transport, and validates all browser/Stasis admission fields before granting control.",
+      "preserves": [
+        "Valid Stasis events and legitimate browser calls are admitted."
+      ],
+      "bug_classes": [
+        "untrusted-event-admission",
+        "unauthenticated-peer"
+      ],
+      "fences": [
+        "VGW-FENCE-ARI-ADMISSION",
+        "VGW-FENCE-INTENT"
+      ]
+    },
+    {
+      "id": "VGW-PROVIDER-TLS-001",
+      "statement": "Provider transport requires TLS 1.2 or newer, trusted roots, hostname and host-allowlist validation; insecure verification cannot be enabled.",
+      "preserves": [
+        "Valid provider TLS calls proceed."
+      ],
+      "bug_classes": [
+        "unauthenticated-peer"
+      ],
+      "fences": [
+        "VGW-FENCE-TLS",
+        "VGW-FENCE-PROVIDER",
+        "VGW-FENCE-INTENT"
+      ]
+    },
+    {
+      "id": "VGW-PROVIDER-SDP-001",
+      "statement": "Provider media accepts only the permitted public PCMA answer, rejects private/loopback/multicast/unspecified addresses and multiple codecs, and admits RTP only from the negotiated source.",
+      "preserves": [
+        "Valid public single-PCMA media remains usable."
+      ],
+      "bug_classes": [
+        "unvalidated-media-address"
+      ],
+      "fences": [
+        "VGW-FENCE-MEDIA",
+        "VGW-FENCE-PROVIDER",
+        "VGW-FENCE-INTENT"
+      ]
+    },
+    {
+      "id": "VGW-BYOK-STATE-001",
+      "statement": "Reservation consumption and ownership transitions are atomic, prevent double-spend/TOCTOU grants, and retain exclusivity while teardown is unsettled.",
+      "preserves": [
+        "A settled call releases its slot; any bounded recovery preserves exclusive call ownership."
+      ],
+      "bug_classes": [
+        "non-atomic-reservation",
+        "unsafe-recovery"
+      ],
+      "fences": [
+        "VGW-FENCE-RESERVATION",
+        "VGW-FENCE-COORDINATOR",
+        "VGW-FENCE-INTENT"
+      ]
+    },
+    {
+      "id": "VGW-BYOK-RECOVERY-001",
+      "statement": "An ambiguous call cannot monopolize admission indefinitely; bounded recovery must exclude a still-live prior provider leg before the slot is reused.",
+      "preserves": [
+        "Calls remain exclusive during the recovery bound and new legitimate reservations can eventually proceed."
+      ],
+      "bug_classes": [
+        "stuck-call-state",
+        "unsafe-recovery"
+      ],
+      "fences": [
+        "VGW-FENCE-RECOVERY",
+        "VGW-FENCE-INTENT"
+      ]
+    },
+    {
+      "id": "VGW-IDENTITY-NONROOT-001",
+      "statement": "Every VGW service mode refuses to run with UID or GID 0: the canonical RuntimeOptions.Valid() lower bound rejects a root service identity for the static REGISTER path, BYOK, office and flag-bootstrap guards, matching the BYOK non-root posture.",
+      "preserves": [
+        "Legitimate non-zero service identities start and operate unchanged; the --run-uid/--run-gid pin cannot select root."
+      ],
+      "bug_classes": [
+        "privileged-service-identity"
+      ],
+      "fences": [
+        "VGW-FENCE-IDENTITY"
+      ]
+    },
+    {
+      "id": "VGW-SOFTPHONE-REG-001",
+      "statement": "A failed browser SIP start or registration stops its credential-bearing agent before enabling manual retry; uncertain cleanup prevents a second agent.",
+      "preserves": [
+        "A valid PBX registration and numeric call remain reachable without automatic retry."
+      ],
+      "bug_classes": [
+        "failed-registration-lifecycle"
+      ],
+      "fences": [
+        "VGW-FENCE-SOFTPHONE-REG",
+        "VGW-FENCE-INTENT"
+      ]
+    }
   ],
   "fences": [
-    {"id": "VGW-FENCE-RESERVATION", "kind": "hard", "mechanism": "test", "check": "vgw-reservation-contract", "controls": [
-      {"path": "internal/byok/reservation_test.go", "selector": "func TestBYOKReservationIsEphemeralOneCallAndNeverEchoesCredential(", "introduced": {"repository": "kugg/highchaparral", "ref": "d1bdbeadbcbd8ea542c4fc5588a462c830c360f3", "path": "vgw/internal/byok/reservation_test.go"}}
-    ]},
-    {"id": "VGW-FENCE-COORDINATOR", "kind": "hard", "mechanism": "test", "check": "vgw-coordinator-contract", "controls": [
-      {"path": "internal/softphone/coordinator_test.go", "selector": "func TestBrowserCallConsumesOneBYOKCredentialAfterReadbackAndDefiniteCleanup(", "introduced": {"repository": "kugg/highchaparral", "ref": "d1bdbeadbcbd8ea542c4fc5588a462c830c360f3", "path": "vgw/internal/softphone/coordinator_test.go"}}
-    ]},
-    {"id": "VGW-FENCE-ORIGIN", "kind": "hard", "mechanism": "test", "check": "vgw-origin-contract", "controls": [
-      {"path": "internal/byok/reservation_test.go", "selector": "func TestBYOKOriginCannotDowngradeToPlaintextOrExternalPath(", "introduced": {"repository": "kugg/highchaparral", "ref": "d1bdbeadbcbd8ea542c4fc5588a462c830c360f3", "path": "vgw/internal/byok/reservation_test.go"}}
-    ]},
-    {"id": "VGW-FENCE-ARI-ADMISSION", "kind": "hard", "mechanism": "test", "check": "vgw-ari-admission-contract", "controls": [
-      {"path": "internal/asterisk/ari_test.go", "selector": "func TestRejectRemoteOrRedirectARI(", "introduced": {"repository": "kugg/highchaparral", "ref": "d1bdbeadbcbd8ea542c4fc5588a462c830c360f3", "path": "vgw/internal/asterisk/ari_test.go"}},
-      {"path": "internal/asterisk/browser_event_test.go", "selector": "func TestBrowserAdmissionRefusesForeignEndpointsAndInboundInjection(", "introduced": {"repository": "kugg/highchaparral", "ref": "d1bdbeadbcbd8ea542c4fc5588a462c830c360f3", "path": "vgw/internal/asterisk/browser_event_test.go"}}
-    ]},
-    {"id": "VGW-FENCE-PROVIDER", "kind": "hard", "mechanism": "test", "check": "vgw-provider-contract", "controls": [
-      {"path": "internal/provider/leg_test.go", "selector": "func TestBYOKProviderBridgesOwnedPCMAAndConfirmsTeardown(", "introduced": {"repository": "kugg/highchaparral", "ref": "d1bdbeadbcbd8ea542c4fc5588a462c830c360f3", "path": "vgw/internal/provider/leg_test.go"}}
-    ]},
-    {"id": "VGW-FENCE-TLS", "kind": "hard", "mechanism": "test", "check": "vgw-tls-contract", "controls": [
-      {"path": "internal/registration/registration_test.go", "selector": "func TestInvalidTLSAndCredential(", "introduced": {"repository": "kugg/highchaparral", "ref": "d1bdbeadbcbd8ea542c4fc5588a462c830c360f3", "path": "vgw/internal/registration/registration_test.go"}},
-      {"path": "internal/registration/registration_test.go", "selector": "func TestExpiredCertificateAndOldTLS(", "introduced": {"repository": "kugg/highchaparral", "ref": "d1bdbeadbcbd8ea542c4fc5588a462c830c360f3", "path": "vgw/internal/registration/registration_test.go"}}
-    ]},
-    {"id": "VGW-FENCE-MEDIA", "kind": "hard", "mechanism": "test", "check": "vgw-media-contract", "controls": [
-      {"path": "internal/asterisk/media_test.go", "selector": "func TestSeparateMediaRelayRejectsUnownedAndMalformedRTP(", "introduced": {"repository": "kugg/highchaparral", "ref": "d1bdbeadbcbd8ea542c4fc5588a462c830c360f3", "path": "vgw/internal/asterisk/media_test.go"}}
-    ]},
-    {"id": "VGW-FENCE-RECOVERY", "kind": "hard", "mechanism": "test", "check": "vgw-recovery-contract", "controls": [
-      {"path": "internal/byok/reservation_test.go", "selector": "func TestBYOKActiveSlotAutoRecoversAfterTTL(", "introduced": {"repository": "kugg/highchaparral", "ref": "0a99b49b4d293a42b7679958a016519af1a98b0e", "path": "vgw/internal/byok/reservation_test.go"}}
-    ]},
-    {"id": "VGW-FENCE-SOFTPHONE-REG", "kind": "hard", "mechanism": "test", "check": "vgw-softphone-registration-contract", "controls": [
-      {"path": "softphone/test/browser.test.mjs", "selector": "test(\"failed REGISTER stops the agent and permits an explicit retry\"", "introduced": {"repository": "kugg/highchaparral", "ref": "36354f49c59a6b36b8c97527fcf84651ef1bd070", "path": "vgw/softphone/test/browser.test.mjs"}}
-    ]},
-    {"id": "VGW-FENCE-INTENT", "kind": "soft", "mechanism": "guidance", "controls": [
-      {"path": "AGENTS.md", "selector": "Developers and agents maintain", "introduced": {"repository": "kugg/highchaparral", "ref": "f78145c1acf746d9cd17801ebc4fb9b608a523cf", "path": "vgw/AGENTS.md"}}
-    ]}
+    {
+      "id": "VGW-FENCE-RESERVATION",
+      "kind": "hard",
+      "mechanism": "test",
+      "check": "vgw-reservation-contract",
+      "controls": [
+        {
+          "path": "internal/byok/reservation_test.go",
+          "selector": "func TestBYOKReservationIsEphemeralOneCallAndNeverEchoesCredential(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "d1bdbeadbcbd8ea542c4fc5588a462c830c360f3",
+            "path": "vgw/internal/byok/reservation_test.go"
+          }
+        }
+      ]
+    },
+    {
+      "id": "VGW-FENCE-COORDINATOR",
+      "kind": "hard",
+      "mechanism": "test",
+      "check": "vgw-coordinator-contract",
+      "controls": [
+        {
+          "path": "internal/softphone/coordinator_test.go",
+          "selector": "func TestBrowserCallConsumesOneBYOKCredentialAfterReadbackAndDefiniteCleanup(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "d1bdbeadbcbd8ea542c4fc5588a462c830c360f3",
+            "path": "vgw/internal/softphone/coordinator_test.go"
+          }
+        }
+      ]
+    },
+    {
+      "id": "VGW-FENCE-ORIGIN",
+      "kind": "hard",
+      "mechanism": "test",
+      "check": "vgw-origin-contract",
+      "controls": [
+        {
+          "path": "internal/byok/reservation_test.go",
+          "selector": "func TestBYOKOriginCannotDowngradeToPlaintextOrExternalPath(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "d1bdbeadbcbd8ea542c4fc5588a462c830c360f3",
+            "path": "vgw/internal/byok/reservation_test.go"
+          }
+        }
+      ]
+    },
+    {
+      "id": "VGW-FENCE-ARI-ADMISSION",
+      "kind": "hard",
+      "mechanism": "test",
+      "check": "vgw-ari-admission-contract",
+      "controls": [
+        {
+          "path": "internal/asterisk/ari_test.go",
+          "selector": "func TestRejectRemoteOrRedirectARI(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "d1bdbeadbcbd8ea542c4fc5588a462c830c360f3",
+            "path": "vgw/internal/asterisk/ari_test.go"
+          }
+        },
+        {
+          "path": "internal/asterisk/browser_event_test.go",
+          "selector": "func TestBrowserAdmissionRefusesForeignEndpointsAndInboundInjection(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "d1bdbeadbcbd8ea542c4fc5588a462c830c360f3",
+            "path": "vgw/internal/asterisk/browser_event_test.go"
+          }
+        }
+      ]
+    },
+    {
+      "id": "VGW-FENCE-PROVIDER",
+      "kind": "hard",
+      "mechanism": "test",
+      "check": "vgw-provider-contract",
+      "controls": [
+        {
+          "path": "internal/provider/leg_test.go",
+          "selector": "func TestBYOKProviderBridgesOwnedPCMAAndConfirmsTeardown(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "d1bdbeadbcbd8ea542c4fc5588a462c830c360f3",
+            "path": "vgw/internal/provider/leg_test.go"
+          }
+        }
+      ]
+    },
+    {
+      "id": "VGW-FENCE-TLS",
+      "kind": "hard",
+      "mechanism": "test",
+      "check": "vgw-tls-contract",
+      "controls": [
+        {
+          "path": "internal/registration/registration_test.go",
+          "selector": "func TestInvalidTLSAndCredential(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "d1bdbeadbcbd8ea542c4fc5588a462c830c360f3",
+            "path": "vgw/internal/registration/registration_test.go"
+          }
+        },
+        {
+          "path": "internal/registration/registration_test.go",
+          "selector": "func TestExpiredCertificateAndOldTLS(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "d1bdbeadbcbd8ea542c4fc5588a462c830c360f3",
+            "path": "vgw/internal/registration/registration_test.go"
+          }
+        }
+      ]
+    },
+    {
+      "id": "VGW-FENCE-MEDIA",
+      "kind": "hard",
+      "mechanism": "test",
+      "check": "vgw-media-contract",
+      "controls": [
+        {
+          "path": "internal/asterisk/media_test.go",
+          "selector": "func TestSeparateMediaRelayRejectsUnownedAndMalformedRTP(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "d1bdbeadbcbd8ea542c4fc5588a462c830c360f3",
+            "path": "vgw/internal/asterisk/media_test.go"
+          }
+        }
+      ]
+    },
+    {
+      "id": "VGW-FENCE-RECOVERY",
+      "kind": "hard",
+      "mechanism": "test",
+      "check": "vgw-recovery-contract",
+      "controls": [
+        {
+          "path": "internal/byok/reservation_test.go",
+          "selector": "func TestBYOKActiveSlotAutoRecoversAfterTTL(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "0a99b49b4d293a42b7679958a016519af1a98b0e",
+            "path": "vgw/internal/byok/reservation_test.go"
+          }
+        }
+      ]
+    },
+    {
+      "id": "VGW-FENCE-INTENT",
+      "kind": "soft",
+      "mechanism": "guidance",
+      "controls": [
+        {
+          "path": "AGENTS.md",
+          "selector": "Developers and agents maintain",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "f78145c1acf746d9cd17801ebc4fb9b608a523cf",
+            "path": "vgw/AGENTS.md"
+          }
+        }
+      ]
+    },
+    {
+      "id": "VGW-FENCE-IDENTITY",
+      "kind": "hard",
+      "mechanism": "test",
+      "check": "vgw-identity-nonroot-contract",
+      "controls": [
+        {
+          "path": "internal/serviceconfig/runtime.go",
+          "selector": "r.UID != 0 && r.GID != 0",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "6d80f6db004cbfb2a20179db14928e417a1e21eb",
+            "path": "vgw/internal/serviceconfig/runtime.go"
+          }
+        },
+        {
+          "path": "internal/serviceconfig/root_refusal_test.go",
+          "selector": "func TestValidRejectsRootUIDAndGID(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "6d80f6db004cbfb2a20179db14928e417a1e21eb",
+            "path": "vgw/internal/serviceconfig/root_refusal_test.go"
+          }
+        },
+        {
+          "path": "internal/serviceconfig/root_refusal_test.go",
+          "selector": "func TestRunUIDZeroRefusedByLaunchFlags(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "6d80f6db004cbfb2a20179db14928e417a1e21eb",
+            "path": "vgw/internal/serviceconfig/root_refusal_test.go"
+          }
+        }
+      ]
+    },
+    {
+      "id": "VGW-FENCE-SOFTPHONE-REG",
+      "kind": "hard",
+      "mechanism": "test",
+      "check": "vgw-softphone-registration-contract",
+      "controls": [
+        {
+          "path": "softphone/test/browser.test.mjs",
+          "selector": "test(\"failed REGISTER stops the agent and permits an explicit retry\"",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "36354f49c59a6b36b8c97527fcf84651ef1bd070",
+            "path": "vgw/softphone/test/browser.test.mjs"
+          }
+        }
+      ]
+    }
   ]
 }
