@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -97,7 +98,7 @@ type mockARI struct {
 func startARI(t *testing.T, rtpPort int) *mockARI {
 	t.Helper()
 	m := &mockARI{t: t, rtpPort: rtpPort, started: make(chan struct{}, 1), cleaned: make(chan struct{}, 1), subscribed: make(chan struct{}, 1), wantApp: appName, wantEndpoint: endpoint}
-	m.server = httptest.NewServer(http.HandlerFunc(m.handle))
+	m.server = httptest.NewTLSServer(http.HandlerFunc(m.handle))
 	t.Cleanup(m.server.Close)
 	return m
 }
@@ -108,7 +109,7 @@ func (m *mockARI) client(t *testing.T) *Client {
 
 func (m *mockARI) clientWithTarget(t *testing.T, target Target) *Client {
 	t.Helper()
-	c, err := New(Config{BaseURL: m.server.URL, Username: "lab", Password: "only-for-tests", Timeout: time.Second, Target: target})
+	c, err := New(Config{BaseURL: m.server.URL, PeerCertificate: m.server.Certificate(), Username: "lab", Password: "only-for-tests", Timeout: time.Second, Target: target})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -440,7 +441,7 @@ func TestFixedDeskTargetUsesOwnedContextAndCleansOnlyItsResources(t *testing.T) 
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := New(Config{BaseURL: m.server.URL, Username: "lab", Password: "only-for-tests", Timeout: time.Second, Target: 255}); err == nil {
+	if _, err := New(Config{BaseURL: m.server.URL, PeerCertificate: m.server.Certificate(), Username: "lab", Password: "only-for-tests", Timeout: time.Second, Target: 255}); err == nil {
 		t.Fatal("unknown ARI destination accepted")
 	}
 }
@@ -824,7 +825,7 @@ func TestAttachBrowserFailureCleansOnlyOwnedResources(t *testing.T) {
 }
 
 func TestStasisUpgradeHeaderHasTotalBound(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, _, err := w.(http.Hijacker).Hijack()
 		if err != nil {
 			t.Error("mock upgrade socket unavailable")
@@ -834,7 +835,7 @@ func TestStasisUpgradeHeaderHasTotalBound(t *testing.T) {
 		_, _ = fmt.Fprintf(conn, "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nX-Untrusted: %s\r\n\r\n", strings.Repeat("X", 8000))
 	}))
 	defer server.Close()
-	c, err := New(Config{BaseURL: server.URL, Username: "lab", Password: "synthetic", Timeout: time.Second})
+	c, err := New(Config{BaseURL: server.URL, PeerCertificate: server.Certificate(), Username: "lab", Password: "synthetic", Timeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -938,7 +939,7 @@ func TestBadARIResponseDoesNotLeakOrOriginate(t *testing.T) {
 }
 
 func TestARIAuthAndConnectionFailuresAreSanitized(t *testing.T) {
-	unauthorized := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	unauthorized := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") == "" {
 			t.Error("Basic auth was not sent in header")
 		}
@@ -947,7 +948,7 @@ func TestARIAuthAndConnectionFailuresAreSanitized(t *testing.T) {
 		_, _ = w.Write([]byte("Sensitive: password-like reply"))
 	}))
 	defer unauthorized.Close()
-	c, err := New(Config{BaseURL: unauthorized.URL, Username: "lab", Password: "synthetic-only", Timeout: 200 * time.Millisecond})
+	c, err := New(Config{BaseURL: unauthorized.URL, PeerCertificate: unauthorized.Certificate(), Username: "lab", Password: "synthetic-only", Timeout: 200 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -962,7 +963,7 @@ func TestARIAuthAndConnectionFailuresAreSanitized(t *testing.T) {
 	}
 	port := probe.Addr().(*net.TCPAddr).Port
 	probe.Close()
-	missing, err := New(Config{BaseURL: fmt.Sprintf("http://127.0.0.1:%d", port),
+	missing, err := New(Config{BaseURL: fmt.Sprintf("https://127.0.0.1:%d", port), PeerCertificate: unauthorized.Certificate(),
 		Username: "lab", Password: "synthetic-only", Timeout: 200 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
@@ -975,6 +976,8 @@ func TestARIAuthAndConnectionFailuresAreSanitized(t *testing.T) {
 }
 
 func TestRejectRemoteOrRedirectARI(t *testing.T) {
+	certServer := httptest.NewTLSServer(http.NotFoundHandler())
+	defer certServer.Close()
 	for _, base := range []string{
 		"http://example.invalid:8088", "http://192.0.2.1:8088",
 		"http://localhost:8088", "http://[::1]:8088", "http://[2001:db8::1]:8088",
@@ -983,23 +986,23 @@ func TestRejectRemoteOrRedirectARI(t *testing.T) {
 		"http://127.0.0.1:0", "http://127.0.0.1:65536",
 		"http://127.0.0.1:-1", "http://127.0.0.1:70000",
 		"http://127.0.0.1:notanumber", "ftp://127.0.0.1:8088",
-		"https://127.0.0.1:8088", "http://127.0.0.1:8088/?secret=1",
+		"http://127.0.0.1:8088", "https://127.0.0.1:8088/?secret=1",
 	} {
-		if _, err := New(Config{BaseURL: base, Username: "lab", Password: "synthetic", Timeout: time.Second}); err == nil {
+		if _, err := New(Config{BaseURL: base, PeerCertificate: certServer.Certificate(), Username: "lab", Password: "synthetic", Timeout: time.Second}); err == nil {
 			t.Fatal("remote or ambiguous ARI endpoint accepted")
 		}
 	}
-	for _, base := range []string{"http://127.0.0.1:1", "http://127.0.0.1:65535"} {
-		c, err := New(Config{BaseURL: base, Username: "lab", Password: "synthetic", Timeout: time.Second})
+	for _, base := range []string{"https://127.0.0.1:1", "https://127.0.0.1:65535"} {
+		c, err := New(Config{BaseURL: base, PeerCertificate: certServer.Certificate(), Username: "lab", Password: "synthetic", Timeout: time.Second})
 		if err != nil {
 			t.Fatal("valid loopback ARI port rejected")
 		}
 		c.Close()
 	}
 	m := &mockARI{t: t, failAt: "", started: make(chan struct{}, 1), cleaned: make(chan struct{}, 1)}
-	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Error("followed ARI redirect"); w.WriteHeader(200) }))
+	remote := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Error("followed ARI redirect"); w.WriteHeader(200) }))
 	defer remote.Close()
-	m.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	m.server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, remote.URL, http.StatusFound)
 	}))
 	defer m.server.Close()
@@ -1119,10 +1122,23 @@ func TestLocalARILabCommandAgainstMock(t *testing.T) {
 	}
 	port := probe.LocalAddr().(*net.UDPAddr).Port
 	probe.Close()
-	ariPort := strings.TrimPrefix(m.server.URL, "http://127.0.0.1:")
+	ariPort := strings.TrimPrefix(m.server.URL, "https://127.0.0.1:")
+	peerDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(peerDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	peerPath := filepath.Join(peerDir, "peer.pem")
+	if err := os.WriteFile(peerPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: m.server.Certificate().Raw}), 0600); err != nil {
+		t.Fatal(err)
+	}
 	cmd := exec.CommandContext(ctx, bin, "-sip-port", fmt.Sprint(port), "-ari-port", ariPort,
-		"-ack-timeout", "500ms")
+		"-ari-peer-cert", peerPath, "-ack-timeout", "500ms")
 	cmd.Env = append(os.Environ(), "GATEWAY_LAB_ARI_USER=lab", "GATEWAY_LAB_ARI_PASSWORD=only-for-tests")
+	var commandOutput bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &commandOutput, &commandOutput
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -1145,7 +1161,9 @@ func TestLocalARILabCommandAgainstMock(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if !ready {
-		t.Fatal("local command did not bind SIP loopback")
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		t.Fatalf("local command did not bind SIP loopback: %s", commandOutput.String())
 	}
 	select {
 	case <-m.subscribed:

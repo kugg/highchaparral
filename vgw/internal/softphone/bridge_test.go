@@ -24,7 +24,7 @@ func TestBrowserBridgeCleansOnlyOwnedResourcesAndAnswersAfterProvider(t *testing
 	var mu sync.Mutex
 	var bridgeID, mediaID string
 	var answerCount, bridgeRemoved, mediaRemoved, browserRemoved int
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
 		user, pass, auth := r.BasicAuth()
@@ -85,7 +85,7 @@ func TestBrowserBridgeCleansOnlyOwnedResourcesAndAnswersAfterProvider(t *testing
 		}
 	}))
 	defer server.Close()
-	ari, err := asterisk.New(asterisk.Config{BaseURL: server.URL,
+	ari, err := asterisk.New(asterisk.Config{BaseURL: server.URL, PeerCertificate: server.Certificate(),
 		Username: "synthetic", Password: "only-for-tests", Target: asterisk.BrowserIngress,
 		Timeout: time.Second})
 	if err != nil {

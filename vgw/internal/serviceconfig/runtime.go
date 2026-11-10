@@ -15,7 +15,7 @@ import (
 )
 
 const DefaultOfficePort uint16 = 5061
-const DefaultARIBaseURL = "http://127.0.0.1:8088"
+const DefaultARIBaseURL = "https://127.0.0.1:8089"
 
 type RuntimeOptions struct {
 	UID, GID    uint32
@@ -69,7 +69,7 @@ func validAbs(path string) bool {
 
 func validARIURL(raw string) bool {
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" ||
+	if err != nil || u.Scheme != "https" || u.Hostname() != "127.0.0.1" ||
 		u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.String() != raw {
 		return false
 	}
@@ -88,8 +88,11 @@ func parseBindPort(value string) (uint16, error) {
 	return uint16(port), nil
 }
 
+// Valid enforces the non-root service identity lower bound: no service
+// mode may pin or default to UID/GID 0, matching the BYOK posture.
 func (r RuntimeOptions) Valid() bool {
-	return r.UID <= 2147483647 && r.GID <= 2147483647 &&
+	return r.UID != 0 && r.GID != 0 &&
+		r.UID <= 2147483647 && r.GID <= 2147483647 &&
 		validAbs(r.ConfigPath) && validAbs(r.RuntimeDir) && validAbs(r.StateDir) &&
 		r.RuntimeDir != r.StateDir && localName.MatchString(r.SocketName) &&
 		(r.PIDFileName == "" || (localName.MatchString(r.PIDFileName) && r.PIDFileName != r.SocketName)) &&

@@ -84,7 +84,11 @@ func runBYOK(out io.Writer, options serviceconfig.RuntimeOptions) (runErr error)
 		return errors.New("one-use BYOK call progress unavailable")
 	}
 	defer milestones.Close()
-	ari, err := asterisk.New(asterisk.Config{BaseURL: config.ARIBaseURL,
+	peer, err := serviceconfig.ReadARIPeerCertificateWithOptions(options)
+	if err != nil {
+		return errors.New("authenticated ARI peer provisioning unavailable")
+	}
+	ari, err := asterisk.New(asterisk.Config{BaseURL: config.ARIBaseURL, PeerCertificate: peer,
 		Username: config.ARIUser, Password: config.ARIPassword,
 		Timeout: 3 * time.Second, Target: asterisk.BrowserIngress})
 	if err != nil {
