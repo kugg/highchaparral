@@ -136,3 +136,33 @@ func TestBYOKOriginCannotDowngradeToPlaintextOrExternalPath(t *testing.T) {
 		t.Fatal("mismatched Host/Origin accepted over loopback proxy")
 	}
 }
+
+func TestBYOKActiveSlotAutoRecoversAfterTTL(t *testing.T) {
+	s, err := New("https://apu.invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock := time.Now()
+	s.now = func() time.Time { return clock }
+	if reserve(s, syntheticRequest).Code != http.StatusCreated {
+		t.Fatal("reservation failed")
+	}
+	if _, err := s.Consume(syntheticNonce, "1234"); err != nil {
+		t.Fatal("consume failed")
+	}
+	// An ambiguous teardown keeps the slot held within the TTL.
+	if s.Complete(syntheticNonce, false) == nil || s.active == "" {
+		t.Fatal("ambiguous BYE freed the provider call slot early")
+	}
+	if reserve(s, strings.ReplaceAll(syntheticRequest, syntheticNonce, strings.Repeat("c", 32))).Code != http.StatusConflict {
+		t.Fatal("new reservation admitted while active slot held")
+	}
+	// After the active TTL the slot auto-recovers with no manual reconciliation.
+	clock = clock.Add(activeTTL + time.Second)
+	if reserve(s, strings.ReplaceAll(syntheticRequest, syntheticNonce, strings.Repeat("c", 32))).Code != http.StatusCreated {
+		t.Fatal("BYOK did not recover after ambiguous-teardown TTL")
+	}
+	if s.active != "" {
+		t.Fatal("stale active slot not cleared on recovery")
+	}
+}

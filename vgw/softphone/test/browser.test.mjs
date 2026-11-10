@@ -12,7 +12,7 @@ const available = existsSync(chrome) && existsSync(bundled);
 const required = process.env.SOFTPHONE_REQUIRE_BROWSER === "1";
 const skip = !required && !available;
 
-async function pageWithSIP(context, enabled = false) {
+async function pageWithSIP(context, enabled = false, registrationFailures = 0) {
   const page = await context.newPage();
   const body = source("index.html").replace(/<script[^>]*><\/script>/g, "").replace(/<link[^>]*>/g, "");
   await page.goto("https://127.0.0.1/softphone/"); // fulfilled by local test route
@@ -26,16 +26,20 @@ async function pageWithSIP(context, enabled = false) {
   await page.addScriptTag({ content: source("dial.js") });
   await page.addScriptTag({ content: source("byok.js") });
   await page.addScriptTag({ content: `(() => {
-    window.__seen = { calls: [], headers: [] };
+    window.__seen = { calls: [], headers: [], agents: [], registrationFailures: ${registrationFailures} };
     const listeners = () => ({ callback: null, addListener(f) { this.callback = f; } });
     class UA {
       static makeURI(s) { return s; }
-      constructor(options) { this.options = options; this.delegate = {}; }
+      constructor(options) { this.options = options; this.delegate = {}; window.__seen.agents.push(this); }
       async start() {}
+      async stop() { this.stopped = true; }
     }
     class Registerer {
       constructor() { this.stateChange = listeners(); }
-      async register() { this.stateChange.callback('Registered'); }
+      async register() {
+        if (window.__seen.registrationFailures-- > 0) throw Error('synthetic REGISTER refusal');
+        this.stateChange.callback('Registered');
+      }
     }
     class Inviter {
       constructor(ua, target, options) {
@@ -55,6 +59,71 @@ async function pageWithSIP(context, enabled = false) {
   await page.addScriptTag({ content: source("app.js") });
   return page;
 }
+
+test("failed REGISTER stops the agent and permits an explicit retry", { skip }, async () => {
+  assert.ok(available, "required Chrome and SIP.js bundle unavailable");
+  const browser = await chromium.launch({ executablePath: chrome, headless: true,
+    args: ["--disable-background-networking", "--no-first-run"] });
+  try {
+    const context = await browser.newContext({ serviceWorkers: "block" });
+    await context.route("**/*", (route) => route.request().url() === "https://127.0.0.1/softphone/"
+      ? route.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html><title>test</title>" })
+      : route.abort());
+    const page = await pageWithSIP(context, false, 1);
+    await page.locator("#sip-user").fill("180");
+    await page.locator("#sip-password").fill("synthetic-pbx-only");
+    await page.locator("#connect").click();
+    await page.waitForFunction(() => document.querySelector("#status")?.textContent ===
+      "PBX registration failed; check WSS trust and account");
+    assert.equal(await page.locator("#connect").isEnabled(), true);
+    assert.deepEqual(await page.evaluate(() => window.__seen.agents.map((a) => !!a.stopped)), [true]);
+    await page.locator("#sip-password").fill("synthetic-pbx-retry");
+    await page.locator("#connect").click();
+    await page.waitForFunction(() => document.querySelector("#status")?.textContent === "Available");
+    assert.equal(await page.locator("#connect").isDisabled(), true);
+    assert.deepEqual(await page.evaluate(() => window.__seen.agents.map((a) => !!a.stopped)), [true, false]);
+  } finally { await browser.close(); }
+});
+
+test("failed start cleans up before manual retry", { skip }, async () => {
+  assert.ok(available, "required Chrome and SIP.js bundle unavailable");
+  const browser = await chromium.launch({ executablePath: chrome, headless: true,
+    args: ["--disable-background-networking", "--no-first-run"] });
+  try {
+    const context = await browser.newContext({ serviceWorkers: "block" });
+    await context.route("**/*", (route) => route.request().url() === "https://127.0.0.1/softphone/"
+      ? route.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html>" })
+      : route.abort());
+    const page = await pageWithSIP(context);
+    await page.evaluate(() => { SIP.UserAgent.prototype.start = async () => { throw Error("synthetic start failure"); }; });
+    await page.locator("#sip-user").fill("180");
+    await page.locator("#connect").click();
+    await page.waitForFunction(() => document.querySelector("#status")?.textContent ===
+      "PBX registration failed; check WSS trust and account");
+    assert.equal(await page.locator("#connect").isEnabled(), true);
+    assert.deepEqual(await page.evaluate(() => window.__seen.agents.map((a) => !!a.stopped)), [true]);
+  } finally { await browser.close(); }
+});
+
+test("uncertain stop does not admit a second credential-bearing agent", { skip }, async () => {
+  assert.ok(available, "required Chrome and SIP.js bundle unavailable");
+  const browser = await chromium.launch({ executablePath: chrome, headless: true,
+    args: ["--disable-background-networking", "--no-first-run"] });
+  try {
+    const context = await browser.newContext({ serviceWorkers: "block" });
+    await context.route("**/*", (route) => route.request().url() === "https://127.0.0.1/softphone/"
+      ? route.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html>" })
+      : route.abort());
+    const page = await pageWithSIP(context, false, 1);
+    await page.evaluate(() => { SIP.UserAgent.prototype.stop = async () => { throw Error("synthetic stop failure"); }; });
+    await page.locator("#sip-user").fill("180");
+    await page.locator("#connect").click();
+    await page.waitForFunction(() => document.querySelector("#status")?.textContent ===
+      "PBX cleanup uncertain; reload before retrying");
+    assert.equal(await page.locator("#connect").isDisabled(), true);
+    assert.equal(await page.evaluate(() => window.__seen.agents.length), 1);
+  } finally { await browser.close(); }
+});
 
 test("built page connects to PBX and places a numeric extension call", { skip }, async () => {
   assert.ok(available, "required Chrome and SIP.js bundle unavailable");

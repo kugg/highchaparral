@@ -88,8 +88,11 @@ func parseBindPort(value string) (uint16, error) {
 	return uint16(port), nil
 }
 
+// Valid enforces the non-root service identity lower bound: no service
+// mode may pin or default to UID/GID 0, matching the BYOK posture.
 func (r RuntimeOptions) Valid() bool {
-	return r.UID <= 2147483647 && r.GID <= 2147483647 &&
+	return r.UID != 0 && r.GID != 0 &&
+		r.UID <= 2147483647 && r.GID <= 2147483647 &&
 		validAbs(r.ConfigPath) && validAbs(r.RuntimeDir) && validAbs(r.StateDir) &&
 		r.RuntimeDir != r.StateDir && localName.MatchString(r.SocketName) &&
 		(r.PIDFileName == "" || (localName.MatchString(r.PIDFileName) && r.PIDFileName != r.SocketName)) &&
