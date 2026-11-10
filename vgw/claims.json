@@ -42,6 +42,10 @@
       "id": "privileged-service-identity",
       "definition": "The credential-holding service process runs with a privileged identity (root UID/GID 0) because the service identity gate lacks a non-zero lower bound.",
       "cwe": "CWE-250"
+    },
+    {
+      "id": "failed-registration-lifecycle",
+      "definition": "A failed browser SIP registration retains a credential-bearing agent or prevents safe manual retry."
     }
   ],
   "claims": [
@@ -192,6 +196,20 @@
       ],
       "fences": [
         "VGW-FENCE-IDENTITY"
+      ]
+    },
+    {
+      "id": "VGW-SOFTPHONE-REG-001",
+      "statement": "A failed browser SIP start or registration stops its credential-bearing agent before enabling manual retry; uncertain cleanup prevents a second agent.",
+      "preserves": [
+        "A valid PBX registration and numeric call remain reachable without automatic retry."
+      ],
+      "bug_classes": [
+        "failed-registration-lifecycle"
+      ],
+      "fences": [
+        "VGW-FENCE-SOFTPHONE-REG",
+        "VGW-FENCE-INTENT"
       ]
     }
   ],
@@ -397,6 +415,23 @@
             "repository": "kugg/highchaparral",
             "ref": "6d80f6db004cbfb2a20179db14928e417a1e21eb",
             "path": "vgw/internal/serviceconfig/root_refusal_test.go"
+          }
+        }
+      ]
+    },
+    {
+      "id": "VGW-FENCE-SOFTPHONE-REG",
+      "kind": "hard",
+      "mechanism": "test",
+      "check": "vgw-softphone-registration-contract",
+      "controls": [
+        {
+          "path": "softphone/test/browser.test.mjs",
+          "selector": "test(\"failed REGISTER stops the agent and permits an explicit retry\"",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "36354f49c59a6b36b8c97527fcf84651ef1bd070",
+            "path": "vgw/softphone/test/browser.test.mjs"
           }
         }
       ]
