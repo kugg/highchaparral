@@ -19,7 +19,8 @@ route/interface/DNS/firewall/VPN or silently contacts a provider.
    guest-namespace NET_ADMIN, explicit rollback and fixed outcomes.
    This tests a *synthetic local answer*, not the provider or two-way RTP.
 3. `release.py --build` requires a **clean committed public tree** and
-   already installed locked Go/npm dependencies. It builds an amd64
+   Go **1.27.4 or later** (the fixed net/http standard-library release),
+   plus already installed locked Go/npm dependencies. It builds an amd64
    `vgw` binary, locked browser assets and `git archive HEAD vgw`
    into a private one-use artifact directory. `manifest.json` pins
    each byte SHA and the commit. `--verify` checks the exact same

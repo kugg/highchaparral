@@ -92,6 +92,10 @@ def verify(directory: Path) -> dict:
 def build(root: Path, artifact_id: str) -> dict:
     if not IDENTIFIER.fullmatch(artifact_id):
         raise ValueError("release artifact ID invalid")
+    toolchain = run(["go", "version"], cwd=VGW)
+    version = re.fullmatch(r"go version go1\.(\d+)\.(\d+) [a-z0-9/]+", toolchain)
+    if version is None or (int(version[1]), int(version[2])) < (27, 4):
+        raise ValueError("release requires patched Go 1.27.4 or later")
     if run(["git", "status", "--porcelain"], cwd=REPO):
         raise ValueError("public checkout has uncommitted changes")
     commit = run(["git", "rev-parse", "HEAD"], cwd=REPO)

@@ -146,3 +146,9 @@ authentication or as a production-provider issue. A same-candidate
 Docker run is still missing; source and unit evidence is not runtime
 proof. The separate high-severity APT build-dependency version pinning
 gap above also remains open for release reproducibility.
+
+After rebasing onto current main, the dependency audit flagged the CI
+Go 1.27.3 standard library as affected by GO-2026-6859 (fixed in
+1.27.4). Both Go workflow pins were raised to the released 1.27.4;
+`release.py --build` now refuses an older toolchain before building
+candidate bytes. Existing Go behavioral tests were not changed.
