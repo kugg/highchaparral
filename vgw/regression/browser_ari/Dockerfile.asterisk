@@ -1,0 +1,35 @@
+# Source-only, digest-pinned Debian/Asterisk 20.22 test image recipe.
+# This never embeds SIP/ARI secrets, keys or a device configuration.
+FROM debian:bookworm-slim@sha256:c67e92c8099ba22853ab4cfda7cfb494d253d6012ca82dee98ba8976772af018
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential ca-certificates curl libedit-dev libjansson-dev \
+    libsqlite3-dev libssl-dev libxml2-dev uuid-dev libncurses-dev \
+    libsrtp2-dev pkg-config python3 && \
+    rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+RUN curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+    --max-time 120 \
+    https://raw.githubusercontent.com/asterisk/third-party/master/pjproject/2.17/pjproject-2.17.tar.bz2 \
+    --output /tmp/pjproject-2.17.tar.bz2 && \
+    printf '%s  %s\n' \
+      04b2eb1f0f01aa0ad1945b167171843448a51aa6b7c3e806496d434f13a112b7 \
+      /tmp/pjproject-2.17.tar.bz2 | sha256sum --check --status
+RUN curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+    --max-time 120 \
+    https://downloads.asterisk.org/pub/telephony/asterisk/asterisk-20.22.0.tar.gz \
+    --output asterisk-20.22.0.tar.gz && \
+    printf '%s  %s\n' \
+      ca4a5cbfa0e8b4fa683ae6aa8302769244b6208f1cc466e6025f89457df418e5 \
+      asterisk-20.22.0.tar.gz | sha256sum --check --status && \
+    tar -xzf asterisk-20.22.0.tar.gz
+WORKDIR /build/asterisk-20.22.0
+RUN ./configure --libdir=/usr/local/lib --with-pjproject-bundled && \
+    make menuselect.makeopts && make -j2 && make install && \
+    test -f /usr/local/lib/asterisk/modules/res_ari.so && \
+    test -f /usr/local/lib/asterisk/modules/chan_pjsip.so && \
+    test -f /usr/local/lib/asterisk/modules/chan_rtp.so
+LABEL org.opencontainers.image.title="vgw-regression-asterisk" \
+      org.opencontainers.image.version="20.22.0"
+ENTRYPOINT ["/usr/sbin/asterisk"]
+CMD ["-V"]

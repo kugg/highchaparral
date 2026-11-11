@@ -765,6 +765,29 @@ func (c *Client) Start(ctx context.Context, callID string, media *net.UDPConn) (
 // readback. It never originates, dials or deletes the caller's channel.
 // The caller must keep the owned Stasis subscription alive and independently
 // consume one transient BYOK reservation before any provider INVITE.
+func waitForOwnedMediaStasis(ctx context.Context, max time.Duration,
+	attempt func(context.Context) (int, error)) error {
+	ready, cancel := context.WithTimeout(ctx, max)
+	defer cancel()
+	for {
+		code, err := attempt(ready)
+		if err == nil && good(code) {
+			return nil
+		}
+		if err != nil || code != http.StatusUnprocessableEntity {
+			return errors.New("browser ARI media bridge attachment failed")
+		}
+		// A freshly created owned ExternalMedia channel may not yet have
+		// entered Stasis. Never retry ambiguous transport failures, other
+		// statuses, caller SIP or a provider transaction.
+		select {
+		case <-ready.Done():
+			return errors.New("browser ARI media bridge attachment failed")
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
 func (c *Client) AttachBrowser(ctx context.Context, start BrowserStart, media *net.UDPConn) (_ *Session, err error) {
 	if c.app != browserApp || c.VerifyBrowserChannel(ctx, start) != nil {
 		return nil, errors.New("browser ARI admission unavailable")
@@ -818,8 +841,11 @@ func (c *Client) AttachBrowser(ctx context.Context, start BrowserStart, media *n
 		return nil, errors.New("browser ARI RTP port unavailable")
 	}
 	s.LocalPort = port
-	code, _, e = c.request(ctx, http.MethodPost, "/bridges/"+s.bridge+"/addChannel", url.Values{"channel": {s.media}})
-	if e != nil || !good(code) {
+	if e = waitForOwnedMediaStasis(ctx, c.timeout, func(attempt context.Context) (int, error) {
+		status, _, requestErr := c.request(attempt, http.MethodPost,
+			"/bridges/"+s.bridge+"/addChannel", url.Values{"channel": {s.media}})
+		return status, requestErr
+	}); e != nil {
 		return nil, errors.New("browser ARI media bridge attachment failed")
 	}
 	ready, cancel := context.WithTimeout(ctx, c.timeout)

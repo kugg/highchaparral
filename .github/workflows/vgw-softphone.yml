@@ -27,3 +27,6 @@ jobs:
           CHROME_EXECUTABLE: /usr/bin/google-chrome
           SOFTPHONE_REQUIRE_BROWSER: '1'
         run: npm test
+      - name: Check opt-in real-Asterisk browser fixture without launching it
+        working-directory: vgw/softphone
+        run: node --check test/regression-ari-once.mjs && node test/regression-ari-once.mjs

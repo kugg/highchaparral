@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
 	"flag"
 	"fmt"
 	"io"
@@ -54,27 +55,44 @@ func run(args []string) string {
 	flags := flag.NewFlagSet("ari-browser-probe", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	runtimeFlags := serviceconfig.BindRuntimeFlags(flags, serviceconfig.DefaultBYOKRuntimeOptions())
+	synthetic := flags.Bool("synthetic-regression", false, "one local synthetic browser call with no provider leg")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return "GO_ARI_IDENTITY_REFUSED"
 	}
-	options, err := runtimeFlags.Options()
-	if err != nil || uint32(os.Geteuid()) != options.UID || uint32(os.Getegid()) != options.GID {
-		return "GO_ARI_IDENTITY_REFUSED"
-	}
-	config, err := serviceconfig.ReadBYOKWithOptions(options)
-	if err != nil {
-		return "GO_ARI_CONFIG_REFUSED"
+	var base, user, password, expected string
+	var peer *x509.Certificate
+	if *synthetic {
+		var err error
+		user, password, expected, peer, err = regressionInputs()
+		if err != nil || os.Geteuid() == 0 {
+			return "MOCK_CONFIG_REFUSED"
+		}
+		base = "https://127.0.0.1:8089"
+	} else {
+		options, err := runtimeFlags.Options()
+		if err != nil || uint32(os.Geteuid()) != options.UID || uint32(os.Getegid()) != options.GID {
+			return "GO_ARI_IDENTITY_REFUSED"
+		}
+		config, err := serviceconfig.ReadBYOKWithOptions(options)
+		if err != nil {
+			return "GO_ARI_CONFIG_REFUSED"
+		}
+		peer, err = serviceconfig.ReadARIPeerCertificateWithOptions(options)
+		if err != nil {
+			return "GO_ARI_PEER_REFUSED"
+		}
+		base, user, password = config.ARIBaseURL, config.ARIUser, config.ARIPassword
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	ctx, timeout := context.WithTimeout(ctx, 40*time.Second)
-	defer timeout()
-	peer, err := serviceconfig.ReadARIPeerCertificateWithOptions(options)
-	if err != nil {
-		return "GO_ARI_PEER_REFUSED"
+	limit := 40 * time.Second
+	if *synthetic {
+		limit = 60 * time.Second
 	}
-	client, err := asterisk.New(asterisk.Config{BaseURL: config.ARIBaseURL, PeerCertificate: peer,
-		Username: config.ARIUser, Password: config.ARIPassword,
+	ctx, timeout := context.WithTimeout(ctx, limit)
+	defer timeout()
+	client, err := asterisk.New(asterisk.Config{BaseURL: base, PeerCertificate: peer,
+		Username: user, Password: password,
 		Timeout: 3 * time.Second, Target: asterisk.BrowserIngress})
 	if err != nil {
 		return "GO_ARI_CLIENT_REFUSED"
@@ -83,6 +101,10 @@ func run(args []string) string {
 	events, gone, err := client.SubscribeBrowser(ctx)
 	if err != nil {
 		return "GO_ARI_SUBSCRIBE_REFUSED"
+	}
+	if *synthetic {
+		fmt.Println("MOCK_WATCHER_READY")
+		return regressionCall(ctx, client, events, gone, expected, user, password, peer)
 	}
 	fmt.Println("GO_ARI_WATCHER_READY")
 	select {
