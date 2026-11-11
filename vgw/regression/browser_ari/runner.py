@@ -37,6 +37,9 @@ BROWSER = MODULE / "softphone/test/regression-ari-once.mjs"
 BUNDLE = MODULE / "softphone/site/vendor/sip.min.js"
 GO = MODULE / "cmd/regression-browser-ari/main.go"
 GOTEST = MODULE / "cmd/regression-browser-ari/main_test.go"
+ARI_PROBE = MODULE / "cmd/ari-browser-probe/main.go"
+ARI_REGRESSION = MODULE / "cmd/ari-browser-probe/regression.go"
+SETTLEMENT = MODULE / "internal/regressionutil/settlement.go"
 HELPER = HERE / "default/main.go"
 HELPERTEST = HERE / "default/main_test.go"
 DOCKERFILE = HERE / "Dockerfile.asterisk"
@@ -102,8 +105,27 @@ def private(path: Path, body: bytes) -> None:
 
 def sources() -> dict:
     return {p.relative_to(MODULE).as_posix(): sha(p) for p in
-            (SOURCE, HERE / "profile.py", BROWSER, GO, GOTEST, HELPER, HELPERTEST, DOCKERFILE,
-             MODULE / "softphone/package-lock.json", BUNDLE)}
+            (SOURCE, HERE / "profile.py", BROWSER, GO, GOTEST, ARI_PROBE, ARI_REGRESSION,
+             SETTLEMENT, MODULE / "internal/asterisk/ari.go", MODULE / "internal/asterisk/browser_event.go",
+             MODULE / "internal/asterisk/media.go", MODULE / "go.mod", MODULE / "go.sum",
+             HELPER, HELPERTEST, DOCKERFILE,
+             MODULE / "softphone/package.json", MODULE / "softphone/package-lock.json",
+             MODULE / "softphone/node_modules/playwright/package.json", BUNDLE)}
+
+
+def playwright_version() -> str:
+    package = MODULE / "softphone/package.json"
+    lock = MODULE / "softphone/package-lock.json"
+    installed = MODULE / "softphone/node_modules/playwright/package.json"
+    for path in (package, lock, installed):
+        sha(path)
+    declared = json.loads(package.read_text(encoding="utf8"))["devDependencies"]["playwright"]
+    locked = json.loads(lock.read_text(encoding="utf8"))["packages"]["node_modules/playwright"]["version"]
+    actual = json.loads(installed.read_text(encoding="utf8"))["version"]
+    if (not isinstance(declared, str) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", declared) or
+            declared != locked or declared != actual):
+        raise ValueError("Playwright package/lock/runtime version changed")
+    return declared
 
 
 def docker_identity() -> dict:
@@ -129,6 +151,13 @@ def image_ids(expected: dict | None = None) -> dict:
                        "--format", "{{.Id}} {{.Os}} {{.Architecture}}"], required=False)
         if not ok or raw != value + " linux amd64":
             raise ValueError("pinned image platform/identity unavailable")
+        if name == "browser":
+            ok, tags = cmd(["docker", "image", "inspect", value,
+                            "--format", "{{json .RepoTags}}"], required=False)
+            expected_tag = "mcr.microsoft.com/playwright:v" + playwright_version() + "-noble"
+            names = json.loads(tags) if ok else None
+            if not isinstance(names, list) or expected_tag not in names:
+                raise ValueError("pinned browser image does not match locked Playwright")
         result[name] = value
     return result
 
@@ -314,8 +343,12 @@ def state() -> dict:
             data.get("images") != image_ids(data.get("images")) or data.get("docker") != docker_identity() or
             data.get("run_id") != RUN_ID or
             data.get("outputs", {}).get("binary") != sha(STATE / "bin/regression-browser-ari", 32_000_000) or
+            data.get("outputs", {}).get("ari_probe") != sha(STATE / "bin/ari-browser-probe", 32_000_000) or
+            (STATE / "bin/regression-browser-ari").stat().st_mode & 0o777 != 0o755 or
+            (STATE / "bin/ari-browser-probe").stat().st_mode & 0o777 != 0o755 or
             data.get("outputs", {}).get("helper") != sha(STATE / "bin/internal-default", 5_000_000) or
             data.get("outputs", {}).get("cert") != sha(STATE / "asterisk/keys/home.crt", 16384) or
+            (STATE / "asterisk/keys/home.crt").stat().st_mode & 0o777 != 0o644 or
             data.get("outputs", {}).get("key") != sha(STATE / "asterisk/keys/home.key", 16384) or
             data.get("outputs", {}).get("browser_key") != sha(STATE / "browser-fixture/asterisk/keys/home.key", 16384) or
             data.get("outputs", {}).get("browser_cert") != sha(STATE / "browser-fixture/asterisk/keys/home.crt", 16384) or
@@ -340,9 +373,7 @@ def stage() -> None:
     files = sources()
     images = image_ids()
     docker = docker_identity()
-    playwright = MODULE / "softphone/node_modules/playwright/package.json"
-    if json.loads(playwright.read_text(encoding="utf8")).get("version") != "1.64.1":
-        raise ValueError("locked Playwright 1.64.1 is not installed")
+    playwright_version()
     parent = STATE.parent
     if parent.exists():
         stat = parent.lstat()
@@ -378,6 +409,9 @@ def stage() -> None:
         raise ValueError("synthetic certificate unavailable")
     tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     tls.load_cert_chain(str(STATE / "asterisk/keys/home.crt"), str(STATE / "asterisk/keys/home.key"))
+    # The Go mock runs nonroot and receives only this PUBLIC leaf by file
+    # bind; the containing host stage remains 0700 and the key stays 0600.
+    (STATE / "asterisk/keys/home.crt").chmod(0o644)
     for name in ("home.crt", "home.key"):
         path = STATE / "asterisk/keys" / name
         sha(path, 16384)
@@ -385,6 +419,7 @@ def stage() -> None:
     env = {**os.environ, "CGO_ENABLED": "0", "GOOS": "linux", "GOARCH": "amd64", "GOPROXY": "off"}
     for workdir, target, package in (
         (MODULE, STATE / "bin/regression-browser-ari", "./cmd/regression-browser-ari"),
+        (MODULE, STATE / "bin/ari-browser-probe", "./cmd/ari-browser-probe"),
         (HERE / "default", STATE / "bin/internal-default", "."),
     ):
         build = subprocess.run(["go", "build", "-trimpath", "-buildvcs=false", "-o", str(target), package],
@@ -392,10 +427,11 @@ def stage() -> None:
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
         if build.returncode:
             raise ValueError("offline synthetic Go build unavailable")
-        target.chmod(0o700)
+        target.chmod(0o700 if target.name == "internal-default" else 0o755)
     if files != sources():
         raise ValueError("regression sources changed during stage")
     output = {"binary": sha(STATE / "bin/regression-browser-ari", 32_000_000),
+              "ari_probe": sha(STATE / "bin/ari-browser-probe", 32_000_000),
               "helper": sha(STATE / "bin/internal-default", 5_000_000),
               "cert": sha(STATE / "asterisk/keys/home.crt", 16384),
               "key": sha(STATE / "asterisk/keys/home.key", 16384),
@@ -541,6 +577,10 @@ def call() -> None:
                 "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
                 "--pull", "never", "--pids-limit", "128", "--memory", "256m", "--user", "65534:65534",
                 "--env-file", str(STATE / "mock.env"),
+                "--mount", "type=bind,src=" + str(STATE / "asterisk/keys/home.crt") +
+                           ",dst=/tmp/vgw-regression-ari-peer.crt,readonly",
+                "--mount", "type=bind,src=" + str(STATE / "bin/ari-browser-probe") +
+                           ",dst=/usr/local/bin/ari-browser-probe,readonly",
                 "--mount", "type=bind,src=" + str(STATE / "bin/regression-browser-ari") +
                            ",dst=/usr/local/bin/regression-browser-ari,readonly",
                 "--platform", "linux/amd64", "--entrypoint", "/usr/local/bin/regression-browser-ari",

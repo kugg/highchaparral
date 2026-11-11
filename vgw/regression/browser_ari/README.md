@@ -25,8 +25,11 @@ It never boots a VM or contacts an external service by itself.
   helper adds one default route **inside** the owned container namespace
   on a verified Docker `--internal` network, then exits before browser
   REGISTER. Nothing runs a macOS route/interface/filter writer.
-- `../../cmd/regression-browser-ari/`: single synthetic answer/PCMA
-  silence mock with bounded **GET-only** channel+bridge settlement.
+- `../../cmd/ari-browser-probe/`: existing inventoried, TLS-leaf-pinned
+  ARI caller adds a synthetic-only mode for the one answer/PCMA silence
+  mock and bounded **GET-only** channel+bridge settlement. The small
+  `../../cmd/regression-browser-ari/` fixed-category launcher delegates
+  to that caller; it never constructs a second ARI client.
 - `../../softphone/test/regression-ari-once.mjs`: real Playwright browser
   fixture; one BYE after Established, requires Terminated, fixed categories.
 - `runner.py`: one-use owner/source/image stage, internal Docker network,
@@ -36,7 +39,9 @@ It never boots a VM or contacts an external service by itself.
   retained after rollback; **never reset or reuse an unknown attempt**.
   The browser sees a separate browser-password/certificate fixture and
   a six-field intent record; it cannot mount the private ARI password,
-  Go environment file or full controller state.
+  Go environment file or full controller state. The nonroot Go test
+  client sees only a public synthetic ARI leaf, not its private key;
+  Basic credentials are sent only after pinned HTTPS trust.
 
 The original `DEFENSEFACTORY-SOURCE.json` identifies the older imported
 snapshot, not these new regression sources. Do not modify that snapshot's
@@ -76,10 +81,11 @@ root; Debian's build-dependency package versions are not locked, so record
 the resulting image ID per test. Install the
 locked softphone npm dependencies, build the SIP.js bundle and prepare
 **locally cached**, reviewed Linux/amd64 image IDs for that Asterisk image,
-the official matching `mcr.microsoft.com/playwright:v1.64.1-noble` image,
+the official matching `mcr.microsoft.com/playwright:vX.Y.Z-noble` image,
 and the digest-pinned Debian Bookworm slim base. The runner never pulls
-an image; verify the Playwright tag matches the installed Playwright 1.64.1
-package before choosing its ID. Keep the three IDs and the run ID in
+an image; the runner requires the declared, locked and installed Playwright
+versions to agree and the pinned image to carry that exact official tag.
+Keep the three IDs and the run ID in
 operator-local shell variables; they are not secrets. From
 `vgw/regression/browser_ari/`:
 
