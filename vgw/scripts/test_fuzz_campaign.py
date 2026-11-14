@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -40,7 +41,7 @@ class FakeRunner:
         fuzz_exit: int = 0,
         fuzz_output: str | None = None,
         listed_target: str = TARGET,
-        source_status: str = "",
+        source_status: str | list[str] = "",
         write_corpus: bool = False,
     ):
         self.root = root
@@ -50,12 +51,18 @@ class FakeRunner:
         self.source_status = source_status
         self.write_corpus = write_corpus
         self.fuzz_called = False
+        self.status_calls = 0
 
     def __call__(self, command, **_kwargs):
         if command == ["git", "rev-parse", "HEAD"]:
             return subprocess.CompletedProcess(command, 0, COMMIT + "\n", "")
         if command[:2] == ["git", "status"]:
-            return subprocess.CompletedProcess(command, 0, self.source_status, "")
+            if isinstance(self.source_status, list):
+                output = self.source_status[min(self.status_calls, len(self.source_status) - 1)]
+            else:
+                output = self.source_status
+            self.status_calls += 1
+            return subprocess.CompletedProcess(command, 0, output, "")
         if command == ["go", "version"]:
             return subprocess.CompletedProcess(command, 0, "go version go1.27.4 linux/amd64\n", "")
         if command[:2] == ["go", "test"] and "-list" in command:
@@ -86,7 +93,7 @@ class CampaignTest(unittest.TestCase):
             parallel=2,
             evidence=evidence,
             runner=runner,
-            environment=environment or {},
+            environment={} if environment is None else environment,
         )
         receipt = json.loads((evidence / "receipt.json").read_text(encoding="utf-8"))
         return status, receipt, evidence
@@ -100,16 +107,28 @@ class CampaignTest(unittest.TestCase):
                 fuzz_output=fuzzed(TARGET, "fail"),
                 write_corpus=True,
             )
-            status, receipt, evidence = self.campaign(root, runner)
+            provenance = {
+                "GITHUB_RUN_ID": "1234",
+                "GITHUB_RUN_ATTEMPT": "2",
+                "GITHUB_WORKFLOW": "VGW native Go fuzzing",
+                "GITHUB_REF": "refs/heads/main",
+            }
+            status, receipt, evidence = self.campaign(root, runner, environment=provenance)
             self.assertEqual(status, 1)
             self.assertEqual(receipt["status"], "fuzz-failed")
             self.assertTrue(receipt["target_executed"])
             self.assertEqual(receipt["target_result"], "fail")
             self.assertTrue(receipt["source_tree_clean_before"])
+            self.assertTrue(receipt["source_tree_clean_after_preflight"])
+            self.assertEqual(receipt["workflow_provenance"]["run_id"], "1234")
+            self.assertEqual(receipt["workflow_provenance"]["run_attempt"], "2")
+            self.assertEqual(receipt["workflow_provenance"]["workflow"], "VGW native Go fuzzing")
+            self.assertEqual(receipt["workflow_provenance"]["ref"], "refs/heads/main")
             self.assertEqual(receipt["captured_corpus"][0]["name"], "deadbeef")
             self.assertEqual(len(receipt["captured_corpus"][0]["sha256"]), 64)
             self.assertIn(f"{TARGET}/deadbeef", (evidence / "replay.txt").read_text())
             self.assertTrue((evidence / "corpus/deadbeef").is_file())
+            self.assertEqual(shlex.split((evidence / "replay.txt").read_text()), receipt["replay_argv"][0])
 
     def test_spoofed_package_output_cannot_claim_target_execution(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -156,6 +175,30 @@ class CampaignTest(unittest.TestCase):
             self.assertEqual(receipt["status"], "source-dirty")
             self.assertFalse(runner.fuzz_called)
             self.assertFalse(receipt["source_tree_clean_before"])
+
+    def test_source_mutation_during_preflight_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.root(temporary)
+            runner = FakeRunner(root, source_status=["", " M internal/asterisk/media.go\n"])
+            status, receipt, _ = self.campaign(root, runner)
+            self.assertEqual(status, 2)
+            self.assertEqual(receipt["status"], "source-changed-after-preflight")
+            self.assertFalse(runner.fuzz_called)
+            self.assertTrue(receipt["source_tree_clean_before"])
+            self.assertFalse(receipt["source_tree_clean_after_preflight"])
+
+    def test_hidden_and_hostile_corpus_names_are_rejected(self):
+        for name in (".hidden", "a.b", "bad name; echo forged"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                root = self.root(temporary)
+                corpus = root / f"internal/asterisk/testdata/fuzz/{TARGET}"
+                corpus.mkdir(parents=True)
+                (corpus / name).write_text("go test fuzz v1\n[]byte(\"bad\")\n", encoding="utf-8")
+                runner = FakeRunner(root)
+                status, receipt, _ = self.campaign(root, runner)
+                self.assertEqual(status, 2)
+                self.assertEqual(receipt["status"], "unsafe-corpus")
+                self.assertFalse(runner.fuzz_called)
 
     def test_unreviewed_target_fails_with_durable_receipt(self):
         with tempfile.TemporaryDirectory() as temporary:

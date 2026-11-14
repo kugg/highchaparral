@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import time
@@ -20,8 +21,12 @@ from typing import Callable, Mapping, Sequence
 TARGETS = {
     ("./internal/asterisk", "FuzzOwnedPCMAReturnPacket"),
     ("./internal/serviceconfig", "FuzzPrivateConfigParsers"),
+    ("./scripts/testdata/fuzzfixture", "FuzzEvidenceCapture"),
 }
 _DURATION = re.compile(r"^([1-9][0-9]*)([smh])$")
+# The corpus name is inserted into a Go regular expression for exact seed replay.
+# Keep the accepted alphabet free of both path/shell and regexp metacharacters.
+_CORPUS_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
 
@@ -33,7 +38,15 @@ class DirtySource(RuntimeError):
     pass
 
 
+class SourceChanged(RuntimeError):
+    pass
+
+
 class TargetUnavailable(RuntimeError):
+    pass
+
+
+class UnsafeCorpus(RuntimeError):
     pass
 
 
@@ -70,10 +83,37 @@ def corpus_snapshot(package_dir: Path, target: str) -> dict[str, str]:
     corpus = package_dir / "testdata" / "fuzz" / target
     if not corpus.is_dir():
         return {}
+    result: dict[str, str] = {}
+    for item in sorted(corpus.iterdir()):
+        if (
+            _CORPUS_NAME.fullmatch(item.name) is None
+            or item.is_symlink()
+            or not item.is_file()
+        ):
+            raise UnsafeCorpus("corpus contains a hidden, unsafe or non-regular entry")
+        result[item.name] = sha256(item)
+    return result
+
+
+def replay_argv(package: str, target: str, corpus_name: str) -> list[str]:
+    if _CORPUS_NAME.fullmatch(corpus_name) is None:
+        raise UnsafeCorpus("corpus filename cannot be rendered safely")
+    return ["go", "test", f"-run=^{target}/{corpus_name}$", package]
+
+
+def render_argv(argv: Sequence[str]) -> str:
+    return shlex.join(argv)
+
+
+def workflow_provenance(environment: Mapping[str, str]) -> dict[str, str | None]:
     return {
-        item.name: sha256(item)
-        for item in sorted(corpus.iterdir())
-        if item.is_file() and not item.is_symlink()
+        "run_id": environment.get("GITHUB_RUN_ID") or None,
+        "run_attempt": environment.get("GITHUB_RUN_ATTEMPT") or None,
+        "workflow": environment.get("GITHUB_WORKFLOW") or None,
+        "ref": environment.get("GITHUB_REF") or None,
+        "repository": environment.get("GITHUB_REPOSITORY") or None,
+        "job": environment.get("GITHUB_JOB") or None,
+        "event_name": environment.get("GITHUB_EVENT_NAME") or None,
     }
 
 
@@ -169,6 +209,7 @@ def run_campaign(
     started_clock = time.monotonic_ns()
     commit: str | None = None
     source_tree_clean_before = False
+    source_tree_clean_after_preflight = False
     preflight_command: list[str] | None = None
 
     try:
@@ -195,6 +236,9 @@ def run_campaign(
         (evidence / "preflight-stderr.log").write_text(preflight.stderr, encoding="utf-8")
         if preflight.returncode != 0 or not target_listed(preflight.stdout, target):
             raise TargetUnavailable("exact reviewed fuzz target unavailable in go test -list")
+        if git_head(runner, module_root) != commit or source_status(runner, module_root):
+            raise SourceChanged("source revision or tree changed during target preflight")
+        source_tree_clean_after_preflight = True
         command = [
             "go", "test", "-json", "-count=1", "-run=^$", f"-fuzz=^{target}$",
             f"-fuzztime={fuzz_time}", "-fuzzminimizetime=10s",
@@ -226,8 +270,11 @@ def run_campaign(
             shutil.copyfile(source, destination)
             captured.append({"name": name, "sha256": digest, "new_or_changed": is_new})
 
-        replay = [f"go test -run='^{target}/{entry['name']}$' {package}" for entry in captured]
-        (evidence / "replay.txt").write_text("\n".join(replay) + ("\n" if replay else ""), encoding="utf-8")
+        replay_args = [replay_argv(package, target, str(entry["name"])) for entry in captured]
+        replay = [render_argv(argv) for argv in replay_args]
+        (evidence / "replay.txt").write_text(
+            "\n".join(replay) + ("\n" if replay else ""), encoding="utf-8"
+        )
         finished = dt.datetime.now(dt.timezone.utc)
         receipt = {
             "schema": 1,
@@ -237,6 +284,8 @@ def run_campaign(
             "source_commit": commit,
             "github_sha_supplied": environment.get("GITHUB_SHA") or None,
             "source_tree_clean_before": source_tree_clean_before,
+            "source_tree_clean_after_preflight": source_tree_clean_after_preflight,
+            "workflow_provenance": workflow_provenance(environment),
             "go_version": version,
             "platform": environment.get("RUNNER_OS") or platform.platform(),
             "package": package,
@@ -254,6 +303,7 @@ def run_campaign(
             "corpus_before": before,
             "corpus_after": after,
             "captured_corpus": captured,
+            "replay_argv": replay_args,
             "replay_commands": replay,
             "artifact_files": artifact_manifest(evidence),
         }
@@ -272,7 +322,9 @@ def run_campaign(
         status = {
             SourceMismatch: "source-mismatch",
             DirtySource: "source-dirty",
+            SourceChanged: "source-changed-after-preflight",
             TargetUnavailable: "target-missing",
+            UnsafeCorpus: "unsafe-corpus",
         }.get(type(error), "helper-failed")
         helper_exit = 3 if isinstance(error, TargetUnavailable) else 2
         receipt = {
@@ -283,6 +335,8 @@ def run_campaign(
             "source_commit": commit,
             "github_sha_supplied": environment.get("GITHUB_SHA") or None,
             "source_tree_clean_before": source_tree_clean_before,
+            "source_tree_clean_after_preflight": source_tree_clean_after_preflight,
+            "workflow_provenance": workflow_provenance(environment),
             "package": package,
             "target": target,
             "preflight_command": preflight_command,
