@@ -1,0 +1,3 @@
+service:
+  verify_tls: false
+  certificate_validation: true

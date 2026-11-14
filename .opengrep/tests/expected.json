@@ -1,5 +1,20 @@
 [
   {
+    "line": 2,
+    "path": ".opengrep/tests/docker/Dockerfile",
+    "rule_id": "opengrep.highchaparral.dockerfile.download-pipe-shell"
+  },
+  {
+    "line": 2,
+    "path": ".opengrep/tests/config_candidates.json",
+    "rule_id": "opengrep.highchaparral.json.disabled-tls-verification"
+  },
+  {
+    "line": 2,
+    "path": ".opengrep/tests/config_candidates.yml",
+    "rule_id": "opengrep.highchaparral.yaml.disabled-tls-verification"
+  },
+  {
     "line": 11,
     "path": ".opengrep/tests/go_candidates.go",
     "rule_id": "opengrep.highchaparral.go.dynamic-shell-command"
@@ -13,6 +28,11 @@
     "line": 15,
     "path": ".opengrep/tests/go_candidates.go",
     "rule_id": "opengrep.highchaparral.go.insecure-tls-verification"
+  },
+  {
+    "line": 3,
+    "path": ".opengrep/tests/html_candidates.html",
+    "rule_id": "opengrep.highchaparral.html.insecure-script-source"
   },
   {
     "line": 3,

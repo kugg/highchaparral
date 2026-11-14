@@ -57,3 +57,55 @@ rules:
       - pattern: subprocess.run(..., shell=True, ...)
       - pattern: subprocess.call(..., shell=True, ...)
       - pattern: subprocess.Popen(..., shell=True, ...)
+
+  - id: highchaparral.json.disabled-tls-verification
+    languages: [json]
+    severity: WARNING
+    message: >-
+      Candidate TLS trust-boundary bypass: a JSON setting appears to disable
+      certificate validation. Triage the setting consumer before classifying.
+    metadata:
+      confidence: MEDIUM
+      factory_disposition: candidate-not-confirmed
+      language: json
+      cwe: CWE-295
+    pattern-regex: '"(?:tls_verify|verify_tls|certificate_validation)"\s*:\s*false'
+
+  - id: highchaparral.yaml.disabled-tls-verification
+    languages: [yaml]
+    severity: WARNING
+    message: >-
+      Candidate TLS trust-boundary bypass: a YAML setting appears to disable
+      certificate validation. Triage the setting consumer before classifying.
+    metadata:
+      confidence: MEDIUM
+      factory_disposition: candidate-not-confirmed
+      language: yaml
+      cwe: CWE-295
+    pattern-regex: '(?m)^\s*(?:tls_verify|verify_tls|certificate_validation):\s*false\s*(?:#.*)?$'
+
+  - id: highchaparral.html.insecure-script-source
+    languages: [html]
+    severity: WARNING
+    message: >-
+      Candidate browser supply-chain boundary: a script is loaded over
+      plaintext HTTP. Triage deployment origin and browser reachability.
+    metadata:
+      confidence: HIGH
+      factory_disposition: candidate-not-confirmed
+      language: html
+      cwe: CWE-319
+    pattern-regex: '(?i)<script[^>]+src\s*=\s*["'']http://'
+
+  - id: highchaparral.dockerfile.download-pipe-shell
+    languages: [dockerfile]
+    severity: WARNING
+    message: >-
+      Candidate build-boundary injection: downloaded bytes are piped directly
+      to a shell. Triage source authentication and digest verification.
+    metadata:
+      confidence: HIGH
+      factory_disposition: candidate-not-confirmed
+      language: dockerfile
+      cwe: CWE-494
+    pattern-regex: '(?i)\b(?:curl|wget)\b[^\n|]*\|\s*(?:sh|bash)\b'

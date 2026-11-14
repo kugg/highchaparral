@@ -29,6 +29,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install checksum-pinned OpenGrep
         shell: bash
@@ -48,6 +50,8 @@ jobs:
         run: |
           "${RUNNER_TEMP}/opengrep" scan --disable-version-check --strict \
             --config "${OPENGREP_RULES}" --json-output "${RUNNER_TEMP}/fixture-results.json" \
+            .opengrep/tests/docker/Dockerfile .opengrep/tests/config_candidates.json \
+            .opengrep/tests/config_candidates.yml .opengrep/tests/html_candidates.html \
             .opengrep/tests/go_candidates.go .opengrep/tests/javascript_candidates.mjs \
             .opengrep/tests/python_candidates.py
           python3 -B .github/scripts/opengrep_evidence.py verify-fixture \
@@ -68,6 +72,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install checksum-pinned OpenGrep
         shell: bash
@@ -85,7 +91,8 @@ jobs:
       - name: Freeze exact tracked target scope
         run: |
           python3 -B .github/scripts/opengrep_evidence.py manifest \
-            --scope "${{ matrix.scope }}" --root . --output "${OUTPUT}"
+            --scope "${{ matrix.scope }}" --root . --expected-head-sha "${GITHUB_SHA}" \
+            --output "${OUTPUT}"
 
       - name: Scan candidates without classifying or blocking on matches
         id: scan
@@ -95,12 +102,15 @@ jobs:
             --manifest "${OUTPUT}/target-manifest.json" --output "${OUTPUT}"
 
       - name: Build deterministic candidate receipt
+        if: always()
         run: |
           python3 -B .github/scripts/opengrep_evidence.py build \
             --scope "${{ matrix.scope }}" \
+            --root . \
             --repository "${GITHUB_REPOSITORY}" \
             --workflow-sha "${GITHUB_SHA}" \
             --head-sha "${PR_HEAD_SHA}" --base-sha "${PR_BASE_SHA}" \
+            --run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
             --engine-version "${OPENGREP_VERSION}" \
             --engine-sha256 "${OPENGREP_LINUX_X86_SHA256}" \
             --rules "${OPENGREP_RULES}" \
@@ -114,7 +124,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: opengrep-${{ matrix.scope }}-${{ github.run_id }}
+          name: opengrep-${{ matrix.scope }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/opengrep-${{ matrix.scope }}/
           if-no-files-found: error
           retention-days: 30

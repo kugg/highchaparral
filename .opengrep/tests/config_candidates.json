@@ -1,0 +1,4 @@
+{
+  "tls_verify": false,
+  "certificate_validation": true
+}

@@ -10,21 +10,34 @@ The workflow downloads OpenGrep 1.33.1 directly from its official release and
 verifies the published SHA-256 before execution. It does not use mutable
 registry configuration or `--config auto`.
 
-Two disjoint tracked-file manifests are generated for every run:
+Two disjoint tracked-file manifests are generated from a clean checkout at the
+exact workflow Git SHA for every run:
 
 - `production`: product source under `vgw/`;
 - `test-evidence`: tests, regression code and evidence-producing deployment
   helpers, including files in directories OpenGrep ignores by default.
 
-Vendored and generated dependencies are recorded as policy exclusions rather
-than scanned as project-owned source. Explicit file arguments ensure the
-test/evidence scope is actually scanned.
+The manifests include the source and configuration languages covered by the
+owned rules (Go, JavaScript/TypeScript, Python, JSON, YAML, HTML and
+Dockerfiles). Every other tracked `vgw/` path is listed with an explicit policy
+reason, including the opposite scan scope, unsupported documentation/build
+metadata, and vendored or generated dependencies. The accounting totals must
+cover every tracked path. Explicit file arguments ensure test/evidence paths
+are scanned even when a scanner default would ignore their directory.
+The scanner's explicit-target unknown-extension mode covers repository naming
+such as `Dockerfile.noll`; unknown formats are not silently added to the scope.
 
 Each job uploads raw JSON, SARIF, scanner logs, the exact target manifest, the
-complete structured scanner argv and a deterministic `evidence.json`. Findings
-remain candidates until a clean-checkout reproduction identifies a violated
-security property, exposure and attack complexity. Only then should they enter
-Defense Factory intake.
+complete structured scanner argv and a deterministic `evidence.json`. The
+receipt rejects a changed HEAD or dirty relevant input and verifies the
+manifest, target list, rules path/digest and engine digest against the captured
+invocation. It records the GitHub run ID and retry attempt; artifact names also
+include both values. A normalized comparison projection omits runtime paths and
+scanner timing while retaining the source, inputs and candidate result, so
+equivalent reruns have a directly comparable digest. Findings remain candidates
+until a clean-checkout reproduction identifies a violated security property,
+exposure and attack complexity. Only then should they enter Defense Factory
+intake.
 
 ## Local verification
 
