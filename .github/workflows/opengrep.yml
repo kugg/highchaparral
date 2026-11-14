@@ -1,0 +1,157 @@
+name: OpenGrep candidates
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 4 * * 2"
+  workflow_dispatch:
+
+concurrency:
+  group: opengrep-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  OPENGREP_VERSION: "1.33.1"
+  OPENGREP_LINUX_X86_SHA256: "46e8133cc490f9f50518061590ce2f6be5a08afaeda034471c0ceda4b3899808"
+  OPENGREP_RULES: .opengrep/rules.yml
+
+jobs:
+  rules:
+    name: Validate owned rules and evidence helper
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install checksum-pinned OpenGrep
+        shell: bash
+        run: |
+          curl --fail --location --silent --show-error \
+            "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_manylinux_x86" \
+            --output "${RUNNER_TEMP}/opengrep"
+          printf '%s  %s\n' "${OPENGREP_LINUX_X86_SHA256}" "${RUNNER_TEMP}/opengrep" | sha256sum --check --strict
+          chmod 755 "${RUNNER_TEMP}/opengrep"
+          "${RUNNER_TEMP}/opengrep" --version
+
+      - name: Test deterministic evidence helper
+        run: python3 -B -m unittest discover -s .github/scripts -p 'test_*.py' -v
+
+      - name: Prove owned rules against exact fixture locations
+        shell: bash
+        run: |
+          "${RUNNER_TEMP}/opengrep" scan --disable-version-check --strict \
+            --config "${OPENGREP_RULES}" --json-output "${RUNNER_TEMP}/fixture-results.json" \
+            .opengrep/tests/docker/Dockerfile .opengrep/tests/config_candidates.json \
+            .opengrep/tests/config_candidates.yml .opengrep/tests/html_candidates.html \
+            .opengrep/tests/go_candidates.go .opengrep/tests/javascript_candidates.mjs \
+            .opengrep/tests/python_candidates.py
+          python3 -B .github/scripts/opengrep_evidence.py verify-fixture \
+            --json "${RUNNER_TEMP}/fixture-results.json" --expected .opengrep/tests/expected.json
+
+  scan:
+    name: Scan (${{ matrix.scope }})
+    needs: rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        scope: [production, test-evidence]
+    env:
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install checksum-pinned OpenGrep
+        shell: bash
+        run: |
+          curl --fail --location --silent --show-error \
+            "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_manylinux_x86" \
+            --output "${RUNNER_TEMP}/opengrep"
+          printf '%s  %s\n' "${OPENGREP_LINUX_X86_SHA256}" "${RUNNER_TEMP}/opengrep" | sha256sum --check --strict
+          chmod 755 "${RUNNER_TEMP}/opengrep"
+          "${RUNNER_TEMP}/opengrep" --version
+
+      - name: Initialize evidence output
+        run: echo "OUTPUT=${RUNNER_TEMP}/opengrep-${{ matrix.scope }}" >> "${GITHUB_ENV}"
+
+      - name: Freeze exact tracked target scope
+        run: |
+          python3 -B .github/scripts/opengrep_evidence.py manifest \
+            --scope "${{ matrix.scope }}" --root . --expected-head-sha "${GITHUB_SHA}" \
+            --output "${OUTPUT}"
+
+      - name: Scan candidates without classifying or blocking on matches
+        id: scan
+        run: |
+          python3 -B .github/scripts/opengrep_evidence.py scan \
+            --engine "${RUNNER_TEMP}/opengrep" --root . --rules "${OPENGREP_RULES}" \
+            --manifest "${OUTPUT}/target-manifest.json" --output "${OUTPUT}"
+
+      - name: Build deterministic candidate receipt
+        if: always()
+        run: |
+          python3 -B .github/scripts/opengrep_evidence.py build \
+            --scope "${{ matrix.scope }}" \
+            --root . \
+            --repository "${GITHUB_REPOSITORY}" \
+            --workflow-sha "${GITHUB_SHA}" \
+            --head-sha "${PR_HEAD_SHA}" --base-sha "${PR_BASE_SHA}" \
+            --run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --engine-version "${OPENGREP_VERSION}" \
+            --engine-sha256 "${OPENGREP_LINUX_X86_SHA256}" \
+            --rules "${OPENGREP_RULES}" \
+            --manifest "${OUTPUT}/target-manifest.json" \
+            --invocation "${OUTPUT}/invocation.json" --scan-exit "${OUTPUT}/scan-exit.txt" \
+            --json "${OUTPUT}/results.json" --sarif "${OUTPUT}/results.sarif" \
+            --stdout "${OUTPUT}/stdout.log" --stderr "${OUTPUT}/stderr.log" \
+            --output "${OUTPUT}"
+
+      - name: Upload candidate evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: opengrep-${{ matrix.scope }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/opengrep-${{ matrix.scope }}/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Validate SARIF publication binding
+        if: always()
+        shell: bash
+        run: |
+          python3 -B .github/scripts/opengrep_evidence.py verify-publication \
+            --receipt "${OUTPUT}/evidence.json" --sarif "${OUTPUT}/results.sarif" \
+            --scope "${{ matrix.scope }}" --category "opengrep-${{ matrix.scope }}" \
+            --artifact-name "opengrep-${{ matrix.scope }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}"
+
+      - name: Publish candidate SARIF to code scanning
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: ${{ runner.temp }}/opengrep-${{ matrix.scope }}/results.sarif
+          category: opengrep-${{ matrix.scope }}
+
+      - name: Fail only on scanner or capture failure
+        if: always()
+        shell: bash
+        run: |
+          test -f "${OUTPUT}/scan-exit.txt"
+          test "$(cat "${OUTPUT}/scan-exit.txt")" -eq 0
+          python3 -c 'import json, os; p=json.load(open(os.environ["OUTPUT"] + "/evidence.json")); assert p["results"]["status"] == "complete"; assert not p["results"]["capture_errors"]'

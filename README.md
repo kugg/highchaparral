@@ -19,6 +19,15 @@ The user performs the penetration test. Findings are triaged in [the Defense Fac
 
 No scheduler or unattended remediation worker is installed for this demo. GitHub Actions runs the full standalone VGW Go race suite and both offline softphone browser cases on every PR. A separate [native Go fuzz workflow](vgw/docs/native-go-fuzzing.md) replays committed corpora on PRs and runs bounded candidate-generating campaigns on schedule or explicit dispatch. The current reviewed fuzz targets make no external calls, but hosted-runner egress is not technically denied. These checks do not deploy, use provider credentials or replace the user's manual penetration test. The redacted literal inventory remains available as an optional manual tool, with its package tests included in the Go suite. A baseline import is setup, not a remediation. Same-host verification is explicitly a rehearsal until independent identities and controlled acceptance permissions are evidenced. Merge alone does not establish deployed remediation.
 
+The [OpenGrep candidate workflow](.opengrep/README.md) adds a second,
+repository-owned static-analysis signal. It scans production and test/evidence
+source separately with a checksum-pinned engine and committed rules, retaining
+JSON, SARIF, exact target coverage and a deterministic receipt. Generic matches
+are nonblocking candidates: they enter factory intake only after source triage
+and clean-checkout reproduction establish a violated security property,
+exposure and attack complexity. Accepted repository-owned rules may later be
+promoted to blocking architectural fences through an explicit review.
+
 The [VGW delivery structure](vgw/deploy/pipeline/README.md) now provides
 a local Docker browser/Asterisk/VGW synthetic regression, content-pinned
 candidate artifacts, and an opt-in QEMU user-network staging path for those

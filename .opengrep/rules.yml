@@ -1,0 +1,111 @@
+rules:
+  - id: highchaparral.go.dynamic-shell-command
+    languages: [go]
+    severity: WARNING
+    message: >-
+      Candidate shell injection boundary: a shell command receives a dynamic
+      command string. Triage the caller and input provenance before classifying.
+    metadata:
+      confidence: MEDIUM
+      factory_disposition: candidate-not-confirmed
+      language: go
+      cwe: CWE-78
+    pattern-either:
+      - pattern: exec.Command("sh", "-c", $COMMAND)
+      - pattern: exec.Command("bash", "-c", $COMMAND)
+      - pattern: exec.CommandContext($CONTEXT, "sh", "-c", $COMMAND)
+      - pattern: exec.CommandContext($CONTEXT, "bash", "-c", $COMMAND)
+
+  - id: highchaparral.go.insecure-tls-verification
+    languages: [go]
+    severity: WARNING
+    message: >-
+      Candidate TLS trust-boundary bypass: certificate verification is disabled.
+      Triage reachability and any compensating verifier before classifying.
+    metadata:
+      confidence: HIGH
+      factory_disposition: candidate-not-confirmed
+      language: go
+      cwe: CWE-295
+    pattern: 'tls.Config{..., InsecureSkipVerify: true, ...}'
+
+  - id: highchaparral.javascript.browser-html-sink
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: >-
+      Candidate browser HTML injection boundary: setContent receives constructed
+      HTML. Triage provenance and test-only isolation before classifying.
+    metadata:
+      confidence: MEDIUM
+      factory_disposition: candidate-not-confirmed
+      language: javascript-typescript
+      cwe: CWE-79
+    pattern: $PAGE.setContent($HTML)
+
+  - id: highchaparral.python.dynamic-shell-command
+    languages: [python]
+    severity: WARNING
+    message: >-
+      Candidate shell injection boundary: subprocess execution enables a shell.
+      Triage argument construction and input provenance before classifying.
+    metadata:
+      confidence: MEDIUM
+      factory_disposition: candidate-not-confirmed
+      language: python
+      cwe: CWE-78
+    pattern-either:
+      - pattern: subprocess.run(..., shell=True, ...)
+      - pattern: subprocess.call(..., shell=True, ...)
+      - pattern: subprocess.Popen(..., shell=True, ...)
+
+  - id: highchaparral.json.disabled-tls-verification
+    languages: [json]
+    severity: WARNING
+    message: >-
+      Candidate TLS trust-boundary bypass: a JSON setting appears to disable
+      certificate validation. Triage the setting consumer before classifying.
+    metadata:
+      confidence: MEDIUM
+      factory_disposition: candidate-not-confirmed
+      language: json
+      cwe: CWE-295
+    pattern-regex: '"(?:tls_verify|verify_tls|certificate_validation)"\s*:\s*false'
+
+  - id: highchaparral.yaml.disabled-tls-verification
+    languages: [yaml]
+    severity: WARNING
+    message: >-
+      Candidate TLS trust-boundary bypass: a YAML setting appears to disable
+      certificate validation. Triage the setting consumer before classifying.
+    metadata:
+      confidence: MEDIUM
+      factory_disposition: candidate-not-confirmed
+      language: yaml
+      cwe: CWE-295
+    pattern-regex: '(?m)^\s*(?:tls_verify|verify_tls|certificate_validation):\s*false\s*(?:#.*)?$'
+
+  - id: highchaparral.html.insecure-script-source
+    languages: [html]
+    severity: WARNING
+    message: >-
+      Candidate browser supply-chain boundary: a script is loaded over
+      plaintext HTTP. Triage deployment origin and browser reachability.
+    metadata:
+      confidence: HIGH
+      factory_disposition: candidate-not-confirmed
+      language: html
+      cwe: CWE-319
+    pattern-regex: '(?i)<script[^>]+src\s*=\s*["'']http://'
+
+  - id: highchaparral.dockerfile.download-pipe-shell
+    languages: [dockerfile]
+    severity: WARNING
+    message: >-
+      Candidate build-boundary injection: downloaded bytes are piped directly
+      to a shell. Triage source authentication and digest verification.
+    metadata:
+      confidence: HIGH
+      factory_disposition: candidate-not-confirmed
+      language: dockerfile
+      cwe: CWE-494
+    pattern-regex: '(?i)\b(?:curl|wget)\b[^\n|]*\|\s*(?:sh|bash)\b'
