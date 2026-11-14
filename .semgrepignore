@@ -1,0 +1,5 @@
+# The workflow generates exact tracked-file manifests. Keep only third-party or
+# repository metadata exclusions here; test and regression code must be scanned.
+.git/
+node_modules/
+vgw/softphone/site/vendor/
