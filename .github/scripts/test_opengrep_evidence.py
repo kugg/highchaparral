@@ -95,6 +95,47 @@ def receipt_fixture(root, runtime="runtime-a", total_time=99):
 
 
 class ManifestTests(unittest.TestCase):
+    def test_manifest_rejects_traversal_and_out_of_scope_targets(self):
+        for target in ("vgw/../outside.go", "vgw/test/../../outside.go", "/vgw/test/example.go"):
+            with self.subTest(target=target), self.assertRaisesRegex(ValueError, "invalid tracked path"):
+                evidence.make_manifest("test-evidence", [target])
+        for target in ("../vgw/test/example.go", "outside.go", "vgw/../outside.go", "/vgw/test/example.go"):
+            with self.subTest(target=target), self.assertRaisesRegex(ValueError, "invalid target path"):
+                evidence.manifest_targets({"files": [target]})
+
+    def test_clean_tracked_symlink_outside_vgw_cannot_enter_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            initialize_repository(root)
+            (root / "outside.mjs").write_text("secret\n", encoding="utf-8")
+            link = root / "vgw/test/outside.mjs"
+            link.symlink_to("../../outside.mjs")
+            run_git(root, "add", "vgw/test/outside.mjs")
+            run_git(root, "commit", "-qm", "add tracked symlink")
+            head = run_git(root, "rev-parse", "HEAD")
+            args = Namespace(
+                root=str(root), scope="test-evidence", expected_head_sha=head,
+                output=str(root / "output"),
+            )
+            with self.assertRaisesRegex(ValueError, "target leaves vgw"):
+                evidence.write_manifest(args)
+
+    def test_scan_rejects_target_replaced_by_symlink(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            initialize_repository(root)
+            manifest = root / "manifest.json"
+            manifest.write_bytes(evidence.canonical(evidence.make_manifest(
+                "test-evidence", evidence.tracked(root), evidence.git_state(root),
+            )))
+            target = root / "vgw/test/example.mjs"
+            target.unlink()
+            (root / "outside.mjs").write_text("secret\n", encoding="utf-8")
+            target.symlink_to("../../outside.mjs")
+            args = Namespace(root=str(root), output=str(root / "output"), manifest=str(manifest))
+            with self.assertRaisesRegex(ValueError, "target leaves vgw"):
+                evidence.run_scan(args)
+
     def test_scope_accounts_for_every_tracked_path_and_includes_configs(self):
         paths = [
             "vgw/Dockerfile.noll",
@@ -137,6 +178,19 @@ class ManifestTests(unittest.TestCase):
 
 
 class ReceiptTests(unittest.TestCase):
+    def test_symlinked_target_cannot_produce_complete_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args, _ = receipt_fixture(root)
+            target = root / "vgw/test/example.mjs"
+            target.unlink()
+            (root / "outside.mjs").write_text("secret\n", encoding="utf-8")
+            target.symlink_to("../../outside.mjs")
+            evidence.build_receipt(args)
+            receipt = json.loads((Path(args.output) / "evidence.json").read_bytes())
+            self.assertEqual(receipt["results"]["status"], "scan-failed")
+            self.assertTrue(any("target leaves vgw" in error for error in receipt["results"]["binding_errors"]))
+
     def test_receipt_binds_head_run_attempt_and_exact_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

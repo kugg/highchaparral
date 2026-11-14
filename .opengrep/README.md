@@ -24,6 +24,8 @@ reason, including the opposite scan scope, unsupported documentation/build
 metadata, and vendored or generated dependencies. The accounting totals must
 cover every tracked path. Explicit file arguments ensure test/evidence paths
 are scanned even when a scanner default would ignore their directory.
+Selected targets must be regular files inside `vgw/`; symlinked targets fail
+manifest creation, scan preparation and receipt validation.
 The scanner's explicit-target unknown-extension mode covers repository naming
 such as `Dockerfile.noll`; unknown formats are not silently added to the scope.
 

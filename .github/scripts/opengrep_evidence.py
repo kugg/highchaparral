@@ -146,6 +146,8 @@ def make_manifest(
         item = PurePosixPath(path)
         if "\n" in path or "\r" in path:
             raise ValueError("tracked path contains a line break")
+        if item.is_absolute() or ".." in item.parts or item.as_posix() != path:
+            raise ValueError(f"invalid tracked path: {path!r}")
         if not path.startswith("vgw/"):
             excluded.append({"path": path, "reason": "outside-vgw-scope"})
             continue
@@ -199,6 +201,7 @@ def write_manifest(args: argparse.Namespace) -> int:
     output.mkdir(parents=True, exist_ok=True)
     state = require_clean_state(root, args.expected_head_sha or None)
     manifest = make_manifest(args.scope, tracked(root), state)
+    validate_target_paths(root, manifest["files"])
     (output / "target-manifest.json").write_bytes(canonical(manifest))
     (output / "targets.txt").write_text("".join(f"{path}\n" for path in manifest["files"]), encoding="utf-8")
     return 0
@@ -226,14 +229,38 @@ def repository_owned_path(root: Path, value: str) -> tuple[Path, str]:
 def manifest_targets(manifest: Any) -> list[str]:
     if not isinstance(manifest, dict) or not isinstance(manifest.get("files"), list):
         raise ValueError("manifest does not contain a files array")
-    targets = [str(path) for path in manifest["files"]]
+    targets = manifest["files"]
     if not targets:
         raise ValueError("target manifest is empty")
     for target in targets:
+        if not isinstance(target, str):
+            raise ValueError(f"invalid target path in manifest: {target!r}")
         item = PurePosixPath(target)
-        if item.is_absolute() or ".." in item.parts or item.as_posix() != target:
+        if (
+            item.is_absolute() or ".." in item.parts or item.as_posix() != target
+            or not target.startswith("vgw/")
+        ):
             raise ValueError(f"invalid target path in manifest: {target!r}")
     return targets
+
+
+def validate_target_paths(root: Path, targets: list[str]) -> None:
+    """Refuse tracked targets that leave vgw or depend on filesystem symlinks."""
+    root = root.resolve()
+    scope_root = root / "vgw"
+    if scope_root.is_symlink() or not scope_root.is_dir():
+        raise ValueError("vgw scan root is missing or symlinked")
+    for target in targets:
+        path = root / target
+        try:
+            resolved = path.resolve(strict=True)
+            resolved.relative_to(scope_root)
+        except (OSError, ValueError) as error:
+            raise ValueError(f"target leaves vgw or is missing: {target!r}") from error
+        if resolved != path:
+            raise ValueError(f"symlinked target is not allowed: {target!r}")
+        if not path.is_file():
+            raise ValueError(f"target is not a regular file: {target!r}")
 
 
 def run_scan(args: argparse.Namespace) -> int:
@@ -245,6 +272,7 @@ def run_scan(args: argparse.Namespace) -> int:
     if error:
         raise ValueError(f"invalid target manifest: {error}")
     targets = manifest_targets(manifest)
+    validate_target_paths(root, targets)
     state = require_clean_state(root)
     if manifest.get("repository_state") != state:
         raise ValueError("target manifest is not bound to the current clean Git state")
@@ -332,6 +360,7 @@ def validate_bindings(
     errors: list[str] = []
     try:
         targets = manifest_targets(manifest)
+        validate_target_paths(root, targets)
     except ValueError as error:
         errors.append(f"manifest:{error}")
         targets = []
