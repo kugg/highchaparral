@@ -1,8 +1,12 @@
 # Native Go fuzzing
 
 The VGW fuzz workflow is a bounded candidate generator, not an unattended
-vulnerability classifier. It never contacts a provider, deploys software or
-loads production credentials.
+vulnerability classifier. The current reviewed targets use synthetic local
+inputs and make no external or provider calls; they do not deploy software or
+load production credentials. GitHub-hosted runner egress is not technically
+denied, so the workflow result is not evidence of network isolation. Any new
+target must receive the same source-level side-effect review before entering
+the fixed matrix.
 
 Pull requests and pushes to `main` replay every committed seed corpus as an
 ordinary Go test. The weekly and manually dispatched campaign runs each
@@ -33,11 +37,18 @@ an earlier artifact.
 
 ## Evidence and replay
 
-Every campaign writes `receipt.json`, separate stdout/stderr logs and
+Before creating its evidence directory, every campaign resolves Git `HEAD`,
+requires any supplied `GITHUB_SHA` to match it, and rejects a dirty source tree.
+Corpus files generated after that clean preflight are allowed and captured as
+fuzz evidence. The exact target must also appear in a bounded `go test -list`
+preflight. Execution is established from native `go test -json` run and terminal
+events rather than matching package output text.
+
+Every campaign writes `receipt.json`, separate structured stdout/stderr logs and
 `replay.txt`. A failure also copies generated or relevant committed corpus
-entries and records their SHA-256 values. The helper treats an exit-zero command
-without native fuzz progress as `target-not-executed`; that outcome fails the
-workflow instead of creating a false green run.
+entries and records their SHA-256 values. An exit-zero command without an exact
+target run and pass event fails the workflow instead of creating a false green
+run.
 
 Download the failed job's `go-fuzz-<target>-<run>-<attempt>` artifact, restore a
 captured corpus file to the package's `testdata/fuzz/<target>/` directory, and
