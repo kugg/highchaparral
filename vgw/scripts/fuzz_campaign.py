@@ -19,9 +19,11 @@ from typing import Callable, Mapping, Sequence
 
 
 TARGETS = {
-    ("./internal/asterisk", "FuzzOwnedPCMAReturnPacket"),
-    ("./internal/serviceconfig", "FuzzPrivateConfigParsers"),
-    ("./scripts/testdata/fuzzfixture", "FuzzEvidenceCapture"),
+    ("./internal/asterisk", "FuzzOwnedPCMAReturnPacket"): Path("internal/asterisk/media_test.go"),
+    ("./internal/serviceconfig", "FuzzPrivateConfigParsers"): Path(
+        "internal/serviceconfig/runtime_fuzz_test.go"
+    ),
+    ("./scripts/testdata/fuzzfixture", "FuzzEvidenceCapture"): None,
 }
 _DURATION = re.compile(r"^([1-9][0-9]*)([smh])$")
 # The corpus name is inserted into a Go regular expression for exact seed replay.
@@ -114,6 +116,141 @@ def workflow_provenance(environment: Mapping[str, str]) -> dict[str, str | None]
         "repository": environment.get("GITHUB_REPOSITORY") or None,
         "job": environment.get("GITHUB_JOB") or None,
         "event_name": environment.get("GITHUB_EVENT_NAME") or None,
+    }
+
+
+def evidence_artifact_identity(
+    target: str, commit: str, environment: Mapping[str, str]
+) -> str:
+    run_id = environment.get("GITHUB_RUN_ID")
+    run_attempt = environment.get("GITHUB_RUN_ATTEMPT")
+    if run_id and run_attempt:
+        return f"go-fuzz-{target}-{run_id}-{run_attempt}"
+    return f"local-go-fuzz-{target}-{commit[:12]}"
+
+
+def sarif_fingerprint(package: str, target: str) -> str:
+    identity = f"native-go-fuzz/v1\0{package}\0{target}".encode()
+    return hashlib.sha256(identity).hexdigest()
+
+
+def fuzz_target_line(source: Path, target: str) -> int:
+    declaration = re.compile(rf"^func\s+{re.escape(target)}\s*\(")
+    for number, line in enumerate(source.read_text(encoding="utf-8").splitlines(), start=1):
+        if declaration.match(line):
+            return number
+    raise ValueError("fuzz target source declaration is unavailable")
+
+
+def write_sarif(
+    *,
+    evidence: Path,
+    module_root: Path,
+    package: str,
+    target: str,
+    status: str,
+    commit: str,
+    environment: Mapping[str, str],
+) -> dict[str, object]:
+    source = TARGETS[(package, target)]
+    category = f"native-go-fuzz/{target}"
+    if source is None:
+        return {
+            "generated": False,
+            "publication_eligible": False,
+            "category": None,
+            "reason": "synthetic-fixture-excluded",
+        }
+    if status not in {"passed", "fuzz-failed"}:
+        return {
+            "generated": False,
+            "publication_eligible": False,
+            "category": category,
+            "reason": "campaign-not-conclusively-completed",
+        }
+
+    source_path = module_root / source
+    line = fuzz_target_line(source_path, target)
+    artifact_identity = evidence_artifact_identity(target, commit, environment)
+    fingerprint = sarif_fingerprint(package, target)
+    rule_id = "VGW-NATIVE-GO-FUZZ-FAILURE"
+    evidence_text = (
+        f"Authoritative reproduction evidence is in artifact {artifact_identity}: "
+        "receipt.json, stdout.jsonl, stderr.log, replay.txt and captured corpus when present."
+    )
+    result = {
+        "ruleId": rule_id,
+        "level": "error",
+        "message": {
+            "text": f"Native Go fuzz target {target} found a reproducible failure. {evidence_text}"
+        },
+        "locations": [
+            {
+                "physicalLocation": {
+                    "artifactLocation": {"uri": (Path("vgw") / source).as_posix()},
+                    "region": {"startLine": line},
+                }
+            }
+        ],
+        "partialFingerprints": {
+            "nativeGoFuzzTarget/v1": fingerprint,
+            "primaryLocationLineHash": fingerprint,
+        },
+        "properties": {
+            "authoritativeEvidenceArtifact": artifact_identity,
+            "authoritativeReceipt": "receipt.json",
+            "category": category,
+            "package": package,
+            "sourceCommit": commit,
+            "target": target,
+        },
+    }
+    results = [result] if status == "fuzz-failed" else []
+    report = {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "automationDetails": {"id": category + "/"},
+                "tool": {
+                    "driver": {
+                        "name": "VGW bounded native Go fuzzing",
+                        "semanticVersion": "1.0.0",
+                        "rules": [
+                            {
+                                "id": rule_id,
+                                "name": "NativeGoFuzzFailure",
+                                "shortDescription": {
+                                    "text": "A reviewed native Go fuzz target failed"
+                                },
+                                "fullDescription": {
+                                    "text": "The bounded campaign found an input that violates the target oracle."
+                                },
+                                "help": {"text": evidence_text, "markdown": evidence_text},
+                                "defaultConfiguration": {"level": "error"},
+                            }
+                        ],
+                    }
+                },
+                "results": results,
+            }
+        ],
+    }
+    destination = evidence / "results.sarif"
+    temporary = evidence / "results.sarif.tmp"
+    try:
+        temporary.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        temporary.replace(destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return {
+        "generated": True,
+        "publication_eligible": True,
+        "category": category,
+        "path": "results.sarif",
+        "result_count": len(results),
+        "stable_fingerprint": fingerprint,
+        "authoritative_evidence_artifact": artifact_identity,
     }
 
 
@@ -211,6 +348,12 @@ def run_campaign(
     source_tree_clean_before = False
     source_tree_clean_after_preflight = False
     preflight_command: list[str] | None = None
+    code_scanning: dict[str, object] = {
+        "generated": False,
+        "publication_eligible": False,
+        "category": None,
+        "reason": "campaign-not-started",
+    }
 
     try:
         if (package, target) not in TARGETS:
@@ -252,10 +395,11 @@ def run_campaign(
             status, helper_exit = "passed", 0
         elif result.returncode == 0:
             status, helper_exit = "target-execution-unconfirmed", 3
-        elif target_executed:
+        elif target_executed and target_result == "fail":
             status, helper_exit = "fuzz-failed", result.returncode
         else:
             status, helper_exit = "failed-before-target", result.returncode
+        campaign_status = status
         after = corpus_snapshot(package_dir, target)
 
         captured: list[dict[str, object]] = []
@@ -275,17 +419,38 @@ def run_campaign(
         (evidence / "replay.txt").write_text(
             "\n".join(replay) + ("\n" if replay else ""), encoding="utf-8"
         )
+        try:
+            code_scanning = write_sarif(
+                evidence=evidence,
+                module_root=module_root,
+                package=package,
+                target=target,
+                status=status,
+                commit=commit,
+                environment=environment,
+            )
+        except Exception as sarif_error:
+            code_scanning = {
+                "generated": False,
+                "publication_eligible": False,
+                "category": f"native-go-fuzz/{target}",
+                "reason": "sarif-generation-failed",
+                "error_category": type(sarif_error).__name__,
+            }
+            status, helper_exit = "sarif-generation-failed", 2
         finished = dt.datetime.now(dt.timezone.utc)
         receipt = {
             "schema": 1,
             "status": status,
             "target_executed": target_executed,
             "target_result": target_result,
+            "campaign_status": campaign_status,
             "source_commit": commit,
             "github_sha_supplied": environment.get("GITHUB_SHA") or None,
             "source_tree_clean_before": source_tree_clean_before,
             "source_tree_clean_after_preflight": source_tree_clean_after_preflight,
             "workflow_provenance": workflow_provenance(environment),
+            "code_scanning": code_scanning,
             "go_version": version,
             "platform": environment.get("RUNNER_OS") or platform.platform(),
             "package": package,
@@ -337,6 +502,7 @@ def run_campaign(
             "source_tree_clean_before": source_tree_clean_before,
             "source_tree_clean_after_preflight": source_tree_clean_after_preflight,
             "workflow_provenance": workflow_provenance(environment),
+            "code_scanning": code_scanning,
             "package": package,
             "target": target,
             "preflight_command": preflight_command,

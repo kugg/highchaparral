@@ -6,6 +6,7 @@ import tempfile
 import unittest
 
 from scripts import fuzz_campaign
+from scripts import verify_fuzz_sarif
 
 
 COMMIT = "a" * 40
@@ -80,7 +81,12 @@ class FakeRunner:
 class CampaignTest(unittest.TestCase):
     def root(self, temporary: str) -> Path:
         root = Path(temporary)
-        (root / "internal/asterisk").mkdir(parents=True)
+        source = root / "internal/asterisk/media_test.go"
+        source.parent.mkdir(parents=True)
+        source.write_text(
+            "package asterisk\n\nfunc FuzzOwnedPCMAReturnPacket() {}\n",
+            encoding="utf-8",
+        )
         return root
 
     def campaign(self, root: Path, runner: FakeRunner, *, environment=None):
@@ -129,6 +135,122 @@ class CampaignTest(unittest.TestCase):
             self.assertIn(f"{TARGET}/deadbeef", (evidence / "replay.txt").read_text())
             self.assertTrue((evidence / "corpus/deadbeef").is_file())
             self.assertEqual(shlex.split((evidence / "replay.txt").read_text()), receipt["replay_argv"][0])
+            scanning = receipt["code_scanning"]
+            self.assertTrue(scanning["generated"])
+            self.assertEqual(scanning["result_count"], 1)
+            self.assertEqual(
+                scanning["authoritative_evidence_artifact"],
+                "go-fuzz-FuzzOwnedPCMAReturnPacket-1234-2",
+            )
+            report = json.loads((evidence / "results.sarif").read_text(encoding="utf-8"))
+            result = report["runs"][0]["results"][0]
+            self.assertEqual(
+                result["locations"][0]["physicalLocation"],
+                {
+                    "artifactLocation": {"uri": "vgw/internal/asterisk/media_test.go"},
+                    "region": {"startLine": 3},
+                },
+            )
+            self.assertEqual(
+                result["partialFingerprints"]["nativeGoFuzzTarget/v1"],
+                fuzz_campaign.sarif_fingerprint("./internal/asterisk", TARGET),
+            )
+            self.assertEqual(
+                "go-fuzz-FuzzOwnedPCMAReturnPacket-1234-2",
+                result["properties"]["authoritativeEvidenceArtifact"],
+            )
+            verify_fuzz_sarif.verify(evidence, TARGET)
+
+    def test_clean_campaign_generates_valid_zero_result_sarif(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.root(temporary)
+            status, receipt, evidence = self.campaign(root, FakeRunner(root))
+            self.assertEqual(status, 0)
+            self.assertEqual(receipt["status"], "passed")
+            self.assertEqual(receipt["code_scanning"]["result_count"], 0)
+            report = json.loads((evidence / "results.sarif").read_text(encoding="utf-8"))
+            self.assertEqual(report["version"], "2.1.0")
+            self.assertEqual(report["runs"][0]["results"], [])
+            verify_fuzz_sarif.verify(evidence, TARGET)
+            (evidence / "results.sarif").write_text("{}\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "hash-bound"):
+                verify_fuzz_sarif.verify(evidence, TARGET)
+
+    def test_sarif_fingerprint_is_stable_and_fixture_is_excluded(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.root(temporary)
+            first = root / "first"
+            second = root / "second"
+            first.mkdir()
+            second.mkdir()
+            first_metadata = fuzz_campaign.write_sarif(
+                evidence=first,
+                module_root=root,
+                package="./internal/asterisk",
+                target=TARGET,
+                status="fuzz-failed",
+                commit="a" * 40,
+                environment={"GITHUB_RUN_ID": "10", "GITHUB_RUN_ATTEMPT": "1"},
+            )
+            second_metadata = fuzz_campaign.write_sarif(
+                evidence=second,
+                module_root=root,
+                package="./internal/asterisk",
+                target=TARGET,
+                status="fuzz-failed",
+                commit="b" * 40,
+                environment={"GITHUB_RUN_ID": "11", "GITHUB_RUN_ATTEMPT": "2"},
+            )
+            self.assertEqual(
+                first_metadata["stable_fingerprint"],
+                second_metadata["stable_fingerprint"],
+            )
+            self.assertNotEqual(
+                first_metadata["authoritative_evidence_artifact"],
+                second_metadata["authoritative_evidence_artifact"],
+            )
+
+            evidence = root / "fixture"
+            evidence.mkdir()
+            metadata = fuzz_campaign.write_sarif(
+                evidence=evidence,
+                module_root=evidence,
+                package="./scripts/testdata/fuzzfixture",
+                target="FuzzEvidenceCapture",
+                status="fuzz-failed",
+                commit=COMMIT,
+                environment={"GITHUB_RUN_ID": "99", "GITHUB_RUN_ATTEMPT": "1"},
+            )
+            self.assertEqual(metadata["reason"], "synthetic-fixture-excluded")
+            self.assertFalse(metadata["publication_eligible"])
+            self.assertFalse((evidence / "results.sarif").exists())
+
+    def test_workflow_scopes_publication_and_excludes_fixture(self):
+        workflow = (
+            Path(__file__).resolve().parents[2] / ".github/workflows/go-fuzz.yml"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(
+            workflow.count("github/codeql-action/upload-sarif@33d7b85"), 1
+        )
+        self.assertEqual(
+            workflow.count("persist-credentials: false"),
+            workflow.count("actions/checkout@"),
+        )
+        campaign, fixture = workflow.split("  controlled-failure-contract:", 1)
+        self.assertIn("security-events: write", campaign)
+        self.assertIn("category: native-go-fuzz/${{ matrix.target }}", campaign)
+        self.assertNotIn("security-events: write", fixture)
+        self.assertNotIn("upload-sarif", fixture)
+
+    def test_sarif_generation_error_cannot_publish_false_clean_result(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.root(temporary)
+            (root / "internal/asterisk/media_test.go").unlink()
+            status, receipt, evidence = self.campaign(root, FakeRunner(root))
+            self.assertEqual(status, 2)
+            self.assertEqual(receipt["status"], "sarif-generation-failed")
+            self.assertFalse(receipt["code_scanning"]["publication_eligible"])
+            self.assertFalse((evidence / "results.sarif").exists())
 
     def test_spoofed_package_output_cannot_claim_target_execution(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -154,6 +276,7 @@ class CampaignTest(unittest.TestCase):
             self.assertEqual(status, 3)
             self.assertEqual(receipt["status"], "target-missing")
             self.assertFalse(runner.fuzz_called)
+            self.assertFalse(receipt["code_scanning"]["publication_eligible"])
 
     def test_github_sha_must_match_resolved_head(self):
         with tempfile.TemporaryDirectory() as temporary:

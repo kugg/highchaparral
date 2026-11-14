@@ -56,6 +56,16 @@ omitted by artifact upload. Replay commands are stored as argv arrays and
 separately rendered with shell-safe quoting. The receipt also binds the GitHub
 workflow, run ID, attempt and ref when executed in Actions.
 
+Conclusive reviewed campaigns also create `results.sarif` as a derived
+observability summary. A confirmed fuzz failure produces one diagnostic at the
+fuzz-target declaration with a target-stable fingerprint; a confirmed clean
+campaign produces a valid zero-result report. The receipt records the stable
+per-target category and exact artifact identity referenced by the diagnostic.
+The artifact bundle remains the authoritative reproduction evidence. CI checks
+the SARIF hash against that receipt before uploading it to code scanning. Setup,
+capture or SARIF-generation errors produce no publishable clean report. The
+synthetic controlled-failure fixture is explicitly excluded from code scanning.
+
 Download the failed job's `go-fuzz-<target>-<run>-<attempt>` artifact, restore a
 captured corpus file to the package's `testdata/fuzz/<target>/` directory, and
 run the exact command from `replay.txt`. Once the input and oracle are confirmed,

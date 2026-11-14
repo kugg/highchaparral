@@ -11,6 +11,7 @@ on:
       - "vgw/scripts/fuzz_campaign.py"
       - "vgw/scripts/test_fuzz_campaign.py"
       - "vgw/scripts/verify_fuzz_fixture.py"
+      - "vgw/scripts/verify_fuzz_sarif.py"
       - ".github/workflows/go-fuzz.yml"
   pull_request:
     paths:
@@ -21,6 +22,7 @@ on:
       - "vgw/scripts/fuzz_campaign.py"
       - "vgw/scripts/test_fuzz_campaign.py"
       - "vgw/scripts/verify_fuzz_fixture.py"
+      - "vgw/scripts/verify_fuzz_sarif.py"
       - ".github/workflows/go-fuzz.yml"
   schedule:
     - cron: "37 2 * * 3"
@@ -46,6 +48,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27.4"
@@ -60,6 +64,9 @@ jobs:
   campaign:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     timeout-minutes: 12
     strategy:
       fail-fast: false
@@ -71,6 +78,8 @@ jobs:
             target: FuzzPrivateConfigParsers
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27.4"
@@ -87,6 +96,7 @@ jobs:
           --parallel 2
           --evidence '${{ runner.temp }}/fuzz-evidence/${{ matrix.target }}'
       - name: Upload immutable fuzz receipt
+        id: evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -94,6 +104,23 @@ jobs:
           path: ${{ runner.temp }}/fuzz-evidence/${{ matrix.target }}
           if-no-files-found: error
           retention-days: 30
+      - name: Require conclusively generated SARIF
+        id: sarif
+        if: always()
+        working-directory: vgw
+        run: >-
+          python3 -B scripts/verify_fuzz_sarif.py
+          --evidence '${{ runner.temp }}/fuzz-evidence/${{ matrix.target }}'
+          --target '${{ matrix.target }}'
+      - name: Upload fuzz diagnostic to code scanning
+        if: >-
+          always() &&
+          steps.evidence.outcome == 'success' &&
+          steps.sarif.outcome == 'success'
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: ${{ runner.temp }}/fuzz-evidence/${{ matrix.target }}/results.sarif
+          category: native-go-fuzz/${{ matrix.target }}
       - name: Reject failed or unexecuted fuzz target
         if: always() && steps.campaign.outcome != 'success'
         run: exit 1
@@ -104,6 +131,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27.4"

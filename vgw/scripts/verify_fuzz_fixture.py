@@ -42,6 +42,8 @@ def verify(evidence: Path, module_root: Path) -> dict[str, object]:
         or not receipt.get("source_tree_clean_before")
         or not receipt.get("source_tree_clean_after_preflight")
         or receipt.get("command_exit") == 0
+        or receipt.get("code_scanning", {}).get("reason")
+        != "synthetic-fixture-excluded"
     ):
         raise ValueError("controlled fixture receipt does not prove a bound fuzz failure")
 
@@ -75,7 +77,7 @@ def verify(evidence: Path, module_root: Path) -> dict[str, object]:
 
     expected_files = EXPECTED_FILES | {f"corpus/{corpus_name}"}
     manifest = {entry["path"]: entry for entry in receipt.get("artifact_files", [])}
-    if not expected_files.issubset(manifest):
+    if not expected_files.issubset(manifest) or "results.sarif" in manifest:
         raise ValueError("fuzz artifact is incomplete")
     for relative, entry in manifest.items():
         path = evidence / relative
