@@ -56,18 +56,25 @@ jobs:
           # queries. Findings are candidates for triage, not confirmed bugs.
           queries: security-extended
 
-      - name: Build Go modules for extraction
+      - name: Build VGW Go module for extraction
         if: matrix.language == 'go'
         shell: bash
+        working-directory: vgw
         env:
+          CGO_ENABLED: 0
           # setup-go restores the normal build cache before CodeQL starts.
           # An empty, job-local cache ensures the extractor observes compilation.
           GOCACHE: ${{ runner.temp }}/codeql-go-build-cache
-        run: |
-          set -euo pipefail
-          go -C vgw build -a ./...
-          go -C vgw/regression/browser_ari/default build -a \
-            -o "${RUNNER_TEMP}/vgw-regression-internal-default" .
+        run: go build -a ./...
+
+      - name: Build browser regression Go module for extraction
+        if: matrix.language == 'go'
+        shell: bash
+        working-directory: vgw/regression/browser_ari/default
+        env:
+          CGO_ENABLED: 0
+          GOCACHE: ${{ runner.temp }}/codeql-go-build-cache
+        run: go build -a -o "${RUNNER_TEMP}/vgw-regression-internal-default" .
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
