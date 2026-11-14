@@ -1,0 +1,59 @@
+rules:
+  - id: highchaparral.go.dynamic-shell-command
+    languages: [go]
+    severity: WARNING
+    message: >-
+      Candidate shell injection boundary: a shell command receives a dynamic
+      command string. Triage the caller and input provenance before classifying.
+    metadata:
+      confidence: MEDIUM
+      factory_disposition: candidate-not-confirmed
+      language: go
+      cwe: CWE-78
+    pattern-either:
+      - pattern: exec.Command("sh", "-c", $COMMAND)
+      - pattern: exec.Command("bash", "-c", $COMMAND)
+      - pattern: exec.CommandContext($CONTEXT, "sh", "-c", $COMMAND)
+      - pattern: exec.CommandContext($CONTEXT, "bash", "-c", $COMMAND)
+
+  - id: highchaparral.go.insecure-tls-verification
+    languages: [go]
+    severity: WARNING
+    message: >-
+      Candidate TLS trust-boundary bypass: certificate verification is disabled.
+      Triage reachability and any compensating verifier before classifying.
+    metadata:
+      confidence: HIGH
+      factory_disposition: candidate-not-confirmed
+      language: go
+      cwe: CWE-295
+    pattern: 'tls.Config{..., InsecureSkipVerify: true, ...}'
+
+  - id: highchaparral.javascript.browser-html-sink
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: >-
+      Candidate browser HTML injection boundary: setContent receives constructed
+      HTML. Triage provenance and test-only isolation before classifying.
+    metadata:
+      confidence: MEDIUM
+      factory_disposition: candidate-not-confirmed
+      language: javascript-typescript
+      cwe: CWE-79
+    pattern: $PAGE.setContent($HTML)
+
+  - id: highchaparral.python.dynamic-shell-command
+    languages: [python]
+    severity: WARNING
+    message: >-
+      Candidate shell injection boundary: subprocess execution enables a shell.
+      Triage argument construction and input provenance before classifying.
+    metadata:
+      confidence: MEDIUM
+      factory_disposition: candidate-not-confirmed
+      language: python
+      cwe: CWE-78
+    pattern-either:
+      - pattern: subprocess.run(..., shell=True, ...)
+      - pattern: subprocess.call(..., shell=True, ...)
+      - pattern: subprocess.Popen(..., shell=True, ...)

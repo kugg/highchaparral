@@ -1,0 +1,27 @@
+[
+  {
+    "line": 11,
+    "path": ".opengrep/tests/go_candidates.go",
+    "rule_id": "opengrep.highchaparral.go.dynamic-shell-command"
+  },
+  {
+    "line": 13,
+    "path": ".opengrep/tests/go_candidates.go",
+    "rule_id": "opengrep.highchaparral.go.dynamic-shell-command"
+  },
+  {
+    "line": 15,
+    "path": ".opengrep/tests/go_candidates.go",
+    "rule_id": "opengrep.highchaparral.go.insecure-tls-verification"
+  },
+  {
+    "line": 3,
+    "path": ".opengrep/tests/javascript_candidates.mjs",
+    "rule_id": "opengrep.highchaparral.javascript.browser-html-sink"
+  },
+  {
+    "line": 6,
+    "path": ".opengrep/tests/python_candidates.py",
+    "rule_id": "opengrep.highchaparral.python.dynamic-shell-command"
+  }
+]
