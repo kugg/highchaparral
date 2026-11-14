@@ -39,6 +39,15 @@ until a clean-checkout reproduction identifies a violated security property,
 exposure and attack complexity. Only then should they enter Defense Factory
 intake.
 
+After the receipt gate confirms a complete scan, verified inputs and a valid
+SARIF whose result count matches the receipt, the workflow publishes the same
+SARIF to GitHub code scanning. Production and test/evidence use the stable,
+separate categories `opengrep-production` and `opengrep-test-evidence`.
+Publication makes candidates visible in the repository UI; it does not turn a
+generic candidate into a confirmed finding or make matches fail the job. A
+scanner, capture, receipt or SARIF mismatch blocks publication and fails the
+job, while the raw evidence artifact is still retained for diagnosis.
+
 ## Local verification
 
 After installing the checksum-pinned OpenGrep release for the host platform:

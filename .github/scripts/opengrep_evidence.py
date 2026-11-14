@@ -314,6 +314,17 @@ def read_scan_exit(path: Path) -> tuple[int | None, str | None]:
         return None, f"{type(error).__name__}: {error}"
 
 
+def sarif_category(scope: str) -> str:
+    if scope not in {"production", "test-evidence"}:
+        raise ValueError(f"invalid SARIF publication scope: {scope}")
+    return f"opengrep-{scope}"
+
+
+def artifact_identity(scope: str, run_id: str, run_attempt: str) -> str:
+    sarif_category(scope)
+    return f"opengrep-{scope}-{run_id}-{run_attempt}"
+
+
 def validate_bindings(
     *, root: Path, args: argparse.Namespace, manifest: Any, invocation: Any,
     current_state: dict[str, Any] | None,
@@ -491,6 +502,15 @@ def build_receipt(args: argparse.Namespace) -> int:
         "targets": manifest,
         "results": result_summary,
         "comparison": {"projection": comparison_projection, "sha256": content_sha256(comparison_projection)},
+        "publication": {
+            "github_code_scanning": {
+                "intent": "upload-only-after-complete-receipt-validation",
+                "category": sarif_category(args.scope),
+                "sarif_path": "results.sarif",
+                "sarif_sha256": sha256(Path(args.sarif)),
+                "evidence_artifact": artifact_identity(args.scope, args.run_id, args.run_attempt),
+            },
+        },
         "artifact_sha256": {
             "manifest": sha256(Path(args.manifest)), "invocation": sha256(Path(args.invocation)),
             "raw_json": sha256(Path(args.json)), "sarif": sha256(Path(args.sarif)),
@@ -498,6 +518,70 @@ def build_receipt(args: argparse.Namespace) -> int:
         },
     }
     (output / "evidence.json").write_bytes(canonical(receipt))
+    return 0
+
+
+def verify_publication(args: argparse.Namespace) -> int:
+    receipt, receipt_error = load_json(Path(args.receipt))
+    sarif, sarif_error = load_json(Path(args.sarif))
+    errors: list[str] = []
+    if receipt_error or not isinstance(receipt, dict):
+        errors.append(f"receipt:{receipt_error or 'not-an-object'}")
+        receipt = {}
+    if sarif_error or not isinstance(sarif, dict):
+        errors.append(f"sarif:{sarif_error or 'not-an-object'}")
+        sarif = {}
+    expected_category = sarif_category(args.scope)
+    expected_artifact = artifact_identity(args.scope, args.run_id, args.run_attempt)
+    if args.category != expected_category:
+        errors.append("category:not-stable-scope-category")
+    if args.artifact_name != expected_artifact:
+        errors.append("artifact:identity-mismatch")
+    if receipt.get("scope") != args.scope:
+        errors.append("receipt:scope-mismatch")
+    if (receipt.get("results") or {}).get("status") != "complete":
+        errors.append("receipt:scan-not-complete")
+    if (receipt.get("results") or {}).get("capture_errors"):
+        errors.append("receipt:capture-errors-present")
+    if (receipt.get("results") or {}).get("binding_errors"):
+        errors.append("receipt:binding-errors-present")
+    if (receipt.get("results") or {}).get("scanner_error_count") != 0:
+        errors.append("receipt:scanner-errors-present")
+    if (receipt.get("input_binding") or {}).get("status") != "verified":
+        errors.append("receipt:input-binding-not-verified")
+    publication = ((receipt.get("publication") or {}).get("github_code_scanning") or {})
+    if publication.get("category") != expected_category:
+        errors.append("receipt:category-mismatch")
+    if publication.get("evidence_artifact") != expected_artifact:
+        errors.append("receipt:artifact-identity-mismatch")
+    sarif_digest = sha256(Path(args.sarif))
+    if publication.get("sarif_sha256") != sarif_digest:
+        errors.append("receipt:sarif-digest-mismatch")
+    if (receipt.get("artifact_sha256") or {}).get("sarif") != sarif_digest:
+        errors.append("receipt:artifact-sarif-digest-mismatch")
+    if sarif.get("version") != "2.1.0":
+        errors.append("sarif:unsupported-version")
+    if not str(sarif.get("$schema", "")).endswith("/sarif-schema-2.1.0.json"):
+        errors.append("sarif:schema-missing")
+    runs = sarif.get("runs")
+    if not isinstance(runs, list) or not runs:
+        errors.append("sarif:runs-missing")
+        runs = []
+    sarif_result_count = 0
+    for index, run in enumerate(runs):
+        driver = ((run.get("tool") or {}).get("driver") or {}) if isinstance(run, dict) else {}
+        if not driver.get("name"):
+            errors.append(f"sarif:run-{index}-driver-missing")
+        run_results = run.get("results") if isinstance(run, dict) else None
+        if not isinstance(run_results, list):
+            errors.append(f"sarif:run-{index}-results-not-list")
+        else:
+            sarif_result_count += len(run_results)
+    receipt_count = (receipt.get("results") or {}).get("finding_count")
+    if sarif_result_count != receipt_count:
+        errors.append("sarif:finding-count-mismatch")
+    if errors:
+        raise ValueError(f"SARIF publication refused: {sorted(set(errors))!r}")
     return 0
 
 
@@ -550,6 +634,10 @@ def parser() -> argparse.ArgumentParser:
     fixture.add_argument("--json", required=True)
     fixture.add_argument("--expected", required=True)
     fixture.set_defaults(action=verify_fixture)
+    publication = commands.add_parser("verify-publication")
+    for name in ("receipt", "sarif", "scope", "category", "artifact_name", "run_id", "run_attempt"):
+        publication.add_argument("--" + name.replace("_", "-"), required=True)
+    publication.set_defaults(action=verify_publication)
     return result
 
 

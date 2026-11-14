@@ -69,7 +69,14 @@ def receipt_fixture(root, runtime="runtime-a", total_time=99):
         "time": {"total_time": total_time},
     }), encoding="utf-8")
     sarif = area / "results.sarif"
-    sarif.write_text("{}", encoding="utf-8")
+    sarif.write_text(json.dumps({
+        "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": {"driver": {"name": "Opengrep OSS"}},
+            "results": [{"ruleId": "rule.one"}],
+        }],
+    }), encoding="utf-8")
     scan_exit = area / "scan-exit.txt"
     scan_exit.write_text("0\n", encoding="ascii")
     stdout = area / "stdout.log"
@@ -141,6 +148,37 @@ class ReceiptTests(unittest.TestCase):
             self.assertEqual(receipt["source"]["actual_git_head"], args.workflow_sha)
             self.assertEqual(receipt["source"]["github_run_attempt"], "2")
             self.assertEqual(receipt["results"]["candidates"][0]["start"]["line"], 1)
+            publication = receipt["publication"]["github_code_scanning"]
+            self.assertEqual(publication["category"], "opengrep-test-evidence")
+            self.assertEqual(publication["evidence_artifact"], "opengrep-test-evidence-1234-2")
+
+    def test_publication_gate_validates_sarif_receipt_and_stable_category(self):
+        self.assertEqual(evidence.sarif_category("production"), "opengrep-production")
+        self.assertEqual(evidence.sarif_category("test-evidence"), "opengrep-test-evidence")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args, _ = receipt_fixture(root)
+            evidence.build_receipt(args)
+            receipt_path = Path(args.output) / "evidence.json"
+            publication_args = Namespace(
+                receipt=str(receipt_path), sarif=args.sarif, scope=args.scope,
+                category="opengrep-test-evidence", artifact_name="opengrep-test-evidence-1234-2",
+                run_id="1234", run_attempt="2",
+            )
+            self.assertEqual(evidence.verify_publication(publication_args), 0)
+
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            receipt["results"]["status"] = "scan-failed"
+            receipt_path.write_bytes(evidence.canonical(receipt))
+            with self.assertRaisesRegex(ValueError, "scan-not-complete"):
+                evidence.verify_publication(publication_args)
+
+            evidence.build_receipt(args)
+            sarif = json.loads(Path(args.sarif).read_text(encoding="utf-8"))
+            sarif["runs"][0]["results"] = []
+            Path(args.sarif).write_text(json.dumps(sarif), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "finding-count-mismatch"):
+                evidence.verify_publication(publication_args)
 
     def test_swapped_manifest_targets_rules_and_head_fail_binding(self):
         mutations = {
@@ -255,6 +293,28 @@ class ReceiptTests(unittest.TestCase):
             expected.write_text(json.dumps([{"rule_id": "rule", "path": "fixture.go", "line": 5}]), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "fixture findings changed"):
                 evidence.verify_fixture(args)
+
+
+class WorkflowTests(unittest.TestCase):
+    def test_code_scanning_publication_is_pinned_scoped_and_gated(self):
+        workflow = Path(__file__).resolve().parents[1] / "workflows/opengrep.yml"
+        text = workflow.read_text(encoding="utf-8")
+        self.assertIn(
+            "github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3",
+            text,
+        )
+        self.assertIn("category: opengrep-${{ matrix.scope }}", text)
+        self.assertIn("security-events: write", text)
+        self.assertEqual(text.count("persist-credentials: false"), 2)
+        artifact = text.index("- name: Upload candidate evidence")
+        gate = text.index("- name: Validate SARIF publication binding")
+        publication = text.index("- name: Publish candidate SARIF to code scanning")
+        failure = text.index("- name: Fail only on scanner or capture failure")
+        self.assertLess(artifact, gate)
+        self.assertLess(gate, publication)
+        self.assertLess(publication, failure)
+        self.assertIn("--category \"opengrep-${{ matrix.scope }}\"", text)
+        self.assertIn("--run-attempt \"${GITHUB_RUN_ATTEMPT}\"", text)
 
 
 if __name__ == "__main__":
