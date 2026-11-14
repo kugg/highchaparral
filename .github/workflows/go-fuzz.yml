@@ -1,0 +1,91 @@
+name: VGW native Go fuzzing
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "vgw/**/*.go"
+      - "vgw/**/testdata/fuzz/**"
+      - "vgw/go.mod"
+      - "vgw/go.sum"
+      - "vgw/scripts/fuzz_campaign.py"
+      - "vgw/scripts/test_fuzz_campaign.py"
+      - ".github/workflows/go-fuzz.yml"
+  pull_request:
+    paths:
+      - "vgw/**/*.go"
+      - "vgw/**/testdata/fuzz/**"
+      - "vgw/go.mod"
+      - "vgw/go.sum"
+      - "vgw/scripts/fuzz_campaign.py"
+      - "vgw/scripts/test_fuzz_campaign.py"
+      - ".github/workflows/go-fuzz.yml"
+  schedule:
+    - cron: "37 2 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vgw-go-fuzz-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  seed-corpus-regression:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.4"
+          cache-dependency-path: vgw/go.sum
+      - name: Test deterministic evidence capture
+        working-directory: vgw
+        run: python3 -B -m unittest scripts.test_fuzz_campaign
+      - name: Replay committed native fuzz corpora
+        working-directory: vgw
+        run: go test -count=1 -run '^Fuzz(OwnedPCMAReturnPacket|PrivateConfigParsers)$' ./internal/asterisk ./internal/serviceconfig
+
+  campaign:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: ./internal/asterisk
+            target: FuzzOwnedPCMAReturnPacket
+          - package: ./internal/serviceconfig
+            target: FuzzPrivateConfigParsers
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.4"
+          cache-dependency-path: vgw/go.sum
+      - name: Run bounded native fuzz target
+        id: campaign
+        continue-on-error: true
+        working-directory: vgw
+        run: >-
+          python3 -B scripts/fuzz_campaign.py
+          --package '${{ matrix.package }}'
+          --target '${{ matrix.target }}'
+          --fuzz-time 5m
+          --parallel 2
+          --evidence 'fuzz-evidence/${{ matrix.target }}'
+      - name: Upload immutable fuzz receipt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: go-fuzz-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: vgw/fuzz-evidence/${{ matrix.target }}
+          if-no-files-found: error
+          retention-days: 30
+      - name: Reject failed or unexecuted fuzz target
+        if: always() && steps.campaign.outcome != 'success'
+        run: exit 1
