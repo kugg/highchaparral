@@ -74,8 +74,17 @@ type reservation struct {
 	password []byte
 	target   string
 	nonce    string
+	account  string
 	expires  time.Time
 }
+
+// Fairness bounds stop one admitted principal from monopolizing the shared
+// slot (or burning validation work) by repeated reservation attempts.
+const (
+	fairWindow     = 60 * time.Second
+	fairMaxPerUser = 5
+	fairMaxTracked = 1024
+)
 
 type Store struct {
 	mu            sync.Mutex
@@ -84,6 +93,8 @@ type Store struct {
 	pending       *reservation
 	active        string
 	activeExpires time.Time
+	admission     Admission
+	attempts      map[string][]time.Time
 }
 
 // expireActiveLocked clears a stale active slot so an ambiguous teardown
@@ -96,9 +107,7 @@ func (s *Store) expireActiveLocked() {
 
 func (*Store) String() string { return "BYOK reservation store [redacted]" }
 
-// New permits only an exact HTTPS origin. The loopback Go HTTP listener
-// is published solely through a separately owned same-origin APU proxy.
-func New(origins ...string) (*Store, error) {
+func parseOrigins(origins []string) (map[string]string, error) {
 	if len(origins) == 0 || len(origins) > 2 {
 		return nil, reject()
 	}
@@ -112,7 +121,63 @@ func New(origins ...string) (*Store, error) {
 		}
 		allowed[origin] = u.Host
 	}
+	return allowed, nil
+}
+
+// New permits only an exact HTTPS origin. The loopback Go HTTP listener
+// is published solely through a separately owned same-origin APU proxy.
+// A store built without a trusted Admission fails closed: header-only
+// requests are never enough to allocate the shared pending slot.
+func New(origins ...string) (*Store, error) {
+	allowed, err := parseOrigins(origins)
+	if err != nil {
+		return nil, err
+	}
 	return &Store{origins: allowed, now: time.Now}, nil
+}
+
+// NewWithAdmission builds the admitting store used by the BYOK service:
+// every reservation must first present a server-verified principal.
+func NewWithAdmission(admission Admission, origins ...string) (*Store, error) {
+	if admission == nil {
+		return nil, reject()
+	}
+	allowed, err := parseOrigins(origins)
+	if err != nil {
+		return nil, err
+	}
+	return &Store{origins: allowed, now: time.Now, admission: admission,
+		attempts: make(map[string][]time.Time)}, nil
+}
+
+// fairnessLocked reports 0 when the attempt is allowed, 1 when the
+// principal exceeded its windowed attempt budget, and 2 when the global
+// tracked-principal bound is exhausted. Callers must hold s.mu.
+func (s *Store) fairnessLocked(account string) int {
+	if s.attempts == nil {
+		s.attempts = make(map[string][]time.Time)
+	}
+	cutoff := s.now().Add(-fairWindow)
+	list := s.attempts[account]
+	trimmed := list[:0]
+	for _, t := range list {
+		if t.After(cutoff) {
+			trimmed = append(trimmed, t)
+		}
+	}
+	if len(trimmed) == 0 {
+		delete(s.attempts, account)
+	} else {
+		s.attempts[account] = trimmed
+	}
+	if len(trimmed) >= fairMaxPerUser {
+		return 1
+	}
+	if _, present := s.attempts[account]; !present && len(s.attempts) >= fairMaxTracked {
+		return 2
+	}
+	s.attempts[account] = append(s.attempts[account], s.now())
+	return 0
 }
 
 func clear(raw []byte) {
@@ -134,6 +199,31 @@ func (s *Store) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		refuse(http.StatusForbidden)
 		return
 	}
+	// Trusted-boundary admission BEFORE any shared slot state is allocated.
+	// Client-controlled headers above are supporting checks only; the sole
+	// identity source is the verified session assertion. Without a trusted
+	// Admission the store fails closed instead of trusting headers.
+	if s.admission == nil {
+		refuse(http.StatusServiceUnavailable)
+		return
+	}
+	principal, admitted := s.admission.Admit(r)
+	if !admitted {
+		refuse(http.StatusUnauthorized)
+		return
+	}
+	s.mu.Lock()
+	switch s.fairnessLocked(principal.Account) {
+	case 1:
+		s.mu.Unlock()
+		refuse(http.StatusTooManyRequests)
+		return
+	case 2:
+		s.mu.Unlock()
+		refuse(http.StatusServiceUnavailable)
+		return
+	}
+	s.mu.Unlock()
 	data, err := io.ReadAll(io.LimitReader(r.Body, 1025))
 	if err != nil || len(data) < 20 || len(data) > 1024 {
 		clear(data)
@@ -168,7 +258,8 @@ func (s *Store) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.pending = &reservation{identity: input.Identity, password: []byte(input.Password),
-		target: input.Destination, nonce: input.Nonce, expires: s.now().Add(45 * time.Second)}
+		target: input.Destination, nonce: input.Nonce, account: principal.Account,
+		expires: s.now().Add(45 * time.Second)}
 	w.WriteHeader(http.StatusCreated)
 	_, _ = io.WriteString(w, `{"reserved":true}`)
 }

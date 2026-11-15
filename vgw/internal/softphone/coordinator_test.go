@@ -1,12 +1,14 @@
 package softphone
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"example.com/ata/voip-gateway/internal/asterisk"
 	"example.com/ata/voip-gateway/internal/byok"
@@ -20,9 +22,17 @@ func (f reader) ReadBrowserDial(ctx context.Context, start asterisk.BrowserStart
 	return f(ctx, start)
 }
 
-func reserved(t *testing.T) *byok.Store {
+func reserved(t *testing.T) (*byok.Store, *byok.SessionAdmitter) {
 	t.Helper()
-	s, err := byok.New("https://apu.invalid")
+	admitter, err := byok.NewSessionAdmitter(bytes.Repeat([]byte("k"), 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := byok.NewWithAdmission(admitter, "https://apu.invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := admitter.Issue("synthetic", "sess-1", time.Now().Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,12 +41,13 @@ func reserved(t *testing.T) *byok.Store {
 	req.Header.Set("Origin", "https://apu.invalid")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-VGW-Client", "softphone-v1")
+	req.Header.Set("X-VGW-Session", token)
 	out := httptest.NewRecorder()
 	s.ServeHTTP(out, req)
 	if out.Code != http.StatusCreated {
 		t.Fatal("synthetic BYOK setup failed")
 	}
-	return s
+	return s, admitter
 }
 
 func journal(t *testing.T) *byok.Journal {
@@ -54,7 +65,7 @@ func journal(t *testing.T) *byok.Journal {
 }
 
 func TestBrowserCallConsumesOneBYOKCredentialAfterReadbackAndDefiniteCleanup(t *testing.T) {
-	s := reserved(t)
+	s, _ := reserved(t)
 	start := asterisk.BrowserStart{ChannelID: "1693496751.43"}
 	var called, checked bool
 	c := Coordinator{Store: s, Journal: journal(t),
@@ -79,7 +90,7 @@ func TestBrowserCallConsumesOneBYOKCredentialAfterReadbackAndDefiniteCleanup(t *
 
 func TestBrowserCallRefusesStaleSocketOrChangedDialBeforeProvider(t *testing.T) {
 	for _, condition := range []string{"disconnected", "changed-channel", "changed-target"} {
-		s := reserved(t)
+		s, _ := reserved(t)
 		start := asterisk.BrowserStart{ChannelID: "1693496751.43"}
 		gone := make(chan error)
 		if condition == "disconnected" {
@@ -109,7 +120,7 @@ func TestBrowserCallRefusesStaleSocketOrChangedDialBeforeProvider(t *testing.T) 
 }
 
 func TestAmbiguousProviderHangupKeepsBYOKCallSlotBlocked(t *testing.T) {
-	s := reserved(t)
+	s, admitter := reserved(t)
 	start := asterisk.BrowserStart{ChannelID: "1693496751.43"}
 	c := Coordinator{Store: s, Journal: journal(t),
 		Reader: reader(func(_ context.Context, _ asterisk.BrowserStart) (asterisk.BrowserDial, error) {
@@ -127,6 +138,11 @@ func TestAmbiguousProviderHangupKeepsBYOKCallSlotBlocked(t *testing.T) {
 	req.Header.Set("Origin", "https://apu.invalid")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-VGW-Client", "softphone-v1")
+	token, err := admitter.Issue("synthetic", "sess-2", time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-VGW-Session", token)
 	out := httptest.NewRecorder()
 	s.ServeHTTP(out, req)
 	if out.Code != http.StatusConflict {

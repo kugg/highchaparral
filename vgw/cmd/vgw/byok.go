@@ -21,6 +21,32 @@ import (
 	"example.com/ata/voip-gateway/internal/softphone"
 )
 
+// loadBYOKSessionSecret reads the HMAC key for the trusted session
+// admission boundary from an owner-only regular file. A missing, shared,
+// symlinked or oversized secret fails closed; there is no header-only
+// fallback.
+func loadBYOKSessionSecret(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0400 ||
+		info.Size() < 32 || info.Size() > 4096 {
+		return nil, errors.New("BYOK session secret invalid")
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != uint32(os.Geteuid()) || stat.Gid != uint32(os.Getegid()) {
+		return nil, errors.New("BYOK session secret ownership invalid")
+	}
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, errors.New("BYOK session secret unreadable")
+	}
+	defer file.Close()
+	secret, err := io.ReadAll(io.LimitReader(file, 4097))
+	if err != nil || len(secret) < 32 || len(secret) > 4096 {
+		return nil, errors.New("BYOK session secret unreadable")
+	}
+	return secret, nil
+}
+
 // runBYOK neither reads a static upstream SIP password nor starts the old
 // REGISTER service. Service files/runtime dirs must be pre-owned by a
 // separately reviewed deploy stage; the process refuses stale sockets.
@@ -99,7 +125,15 @@ func runBYOK(out io.Writer, options serviceconfig.RuntimeOptions) (runErr error)
 	if err != nil {
 		return errors.New("browser ARI Stasis subscription unavailable")
 	}
-	store, err := byok.New(config.Origins[:]...)
+	sessionSecret, err := loadBYOKSessionSecret(filepath.Join(options.StateDir, "byok-session-secret"))
+	if err != nil {
+		return errors.New("BYOK admission secret unavailable")
+	}
+	admitter, err := byok.NewSessionAdmitter(sessionSecret)
+	if err != nil {
+		return errors.New("BYOK session admission unavailable")
+	}
+	store, err := byok.NewWithAdmission(admitter, config.Origins[:]...)
 	if err != nil {
 		return errors.New("exact BYOK HTTPS origins unavailable")
 	}
