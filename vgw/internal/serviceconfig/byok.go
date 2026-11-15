@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -120,4 +121,24 @@ func ReadBYOKWithOptions(options RuntimeOptions) (BYOKConfig, error) {
 
 func ReadBYOK() (BYOKConfig, error) {
 	return ReadBYOKWithOptions(DefaultBYOKRuntimeOptions())
+}
+
+// maxByokSessionSecretBytes bounds the owner-only admission secret file.
+const maxByokSessionSecretBytes = 4096
+
+// ReadBYOKSessionSecret reads the owner-only session admission secret from a
+// trusted supervisor-selected sibling path, using the same protected-file
+// reader and ownership/GID boundary as the private BYOK config. Remote web
+// clients must never receive this secret; the trusted admission/proxy boundary
+// uses it to issue short-lived signed session assertions.
+func ReadBYOKSessionSecretWithOptions(options RuntimeOptions) ([]byte, error) {
+	if !options.Valid() || options.UID != uint32(os.Geteuid()) || options.GID != uint32(os.Getegid()) {
+		return nil, reject()
+	}
+	path := filepath.Join(filepath.Dir(options.ConfigPath), "byok-session-secret")
+	raw, err := readProtected(path, options.UID, options.GID, maxByokSessionSecretBytes)
+	if err != nil {
+		return nil, err
+	}
+	return bytes.TrimSpace(raw), nil
 }

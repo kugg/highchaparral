@@ -14,6 +14,27 @@ import (
 const syntheticNonce = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 const syntheticRequest = `{"identity":"synthetic","password":"test-only=password","destination":"1234","nonce":"` + syntheticNonce + `"}`
 
+// testAdmission returns a store whose reservation handler accepts only
+// signed session assertions issued by admission (JER-14). This mirrors the
+// production fail-closed wiring introduced for BYOK admission.
+func testAdmission(t *testing.T, now func() time.Time) (*Store, *HMACAdmission) {
+	t.Helper()
+	adm, err := NewHMACAdmission([]byte("test-only=session-secret-32-bytes"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if now != nil {
+		adm.now = now
+	}
+	s, err := NewWithAdmission(adm, "https://apu.invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	adm.now = func() time.Time { return time.Now() }
+	s.now = time.Now
+	return s, adm
+}
+
 func reserve(s *Store, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, "https://apu.invalid"+Path, strings.NewReader(body))
 	req.Header.Set("Origin", "https://apu.invalid")
@@ -25,14 +46,27 @@ func reserve(s *Store, body string) *httptest.ResponseRecorder {
 	return out
 }
 
-func TestBYOKReservationIsEphemeralOneCallAndNeverEchoesCredential(t *testing.T) {
-	s, err := New("https://apu.invalid")
+func reserveAs(s *Store, adm *HMACAdmission, body string, subject string) *httptest.ResponseRecorder {
+	token, err := adm.Issue(subject, admissionLifetime)
 	if err != nil {
-		t.Fatal(err)
+		panic(err)
 	}
+	req := httptest.NewRequest(http.MethodPost, "https://apu.invalid"+Path, strings.NewReader(body))
+	req.Header.Set("Origin", "https://apu.invalid")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("X-VGW-Client", "softphone-v1")
+	req.Header.Set(AdmissionHeader, token)
+	out := httptest.NewRecorder()
+	s.ServeHTTP(out, req)
+	return out
+}
+
+func TestBYOKReservationIsEphemeralOneCallAndNeverEchoesCredential(t *testing.T) {
+	s, adm := testAdmission(t, nil)
 	now := time.Now()
 	s.now = func() time.Time { return now }
-	out := reserve(s, syntheticRequest)
+	out := reserveAs(s, adm, syntheticRequest, "user-01")
 	if out.Code != http.StatusCreated || out.Body.String() != `{"reserved":true}` ||
 		strings.Contains(out.Body.String(), "test-only") || out.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("private BYOK reservation was not bounded or redacted")
@@ -56,7 +90,7 @@ func TestBYOKReservationIsEphemeralOneCallAndNeverEchoesCredential(t *testing.T)
 	if _, err := s.Consume(syntheticNonce, "1234"); err == nil {
 		t.Fatal("BYOK token could be reused")
 	}
-	if reserve(s, strings.ReplaceAll(syntheticRequest, syntheticNonce, strings.Repeat("b", 32))).Code != http.StatusConflict {
+	if reserveAs(s, adm, strings.ReplaceAll(syntheticRequest, syntheticNonce, strings.Repeat("b", 32)), "user-01").Code != http.StatusConflict {
 		t.Fatal("second provider call admitted while first is active")
 	}
 	if s.Complete(syntheticNonce, false) == nil || s.active == "" {
@@ -72,13 +106,11 @@ func TestBYOKReservationIsEphemeralOneCallAndNeverEchoesCredential(t *testing.T)
 }
 
 func TestBYOKTimeoutAndUntrustedInboundNeverReflectSecret(t *testing.T) {
-	s, err := New("https://apu.invalid")
-	if err != nil {
-		t.Fatal(err)
-	}
+	s, adm := testAdmission(t, nil)
 	clock := time.Now()
 	s.now = func() time.Time { return clock }
-	if reserve(s, syntheticRequest).Code != http.StatusCreated {
+	adm.now = func() time.Time { return clock }
+	if reserveAs(s, adm, syntheticRequest, "user-01").Code != http.StatusCreated {
 		t.Fatal("synthetic reservation failed")
 	}
 	expiredSecret := s.pending.password
@@ -97,7 +129,7 @@ func TestBYOKTimeoutAndUntrustedInboundNeverReflectSecret(t *testing.T) {
 		strings.TrimSuffix(syntheticRequest, "}") + `,"extra":"unexpected"}`,
 		strings.Repeat("X", 1025),
 	} {
-		out := reserve(s, payload)
+		out := reserveAs(s, adm, payload, "user-01")
 		if out.Code != http.StatusBadRequest || strings.Contains(out.Body.String(), "test-only") ||
 			strings.Contains(out.Body.String(), "forged") {
 			t.Fatal("untrusted BYOK request was accepted/reflected")
@@ -138,13 +170,11 @@ func TestBYOKOriginCannotDowngradeToPlaintextOrExternalPath(t *testing.T) {
 }
 
 func TestBYOKActiveSlotAutoRecoversAfterTTL(t *testing.T) {
-	s, err := New("https://apu.invalid")
-	if err != nil {
-		t.Fatal(err)
-	}
+	s, adm := testAdmission(t, nil)
 	clock := time.Now()
 	s.now = func() time.Time { return clock }
-	if reserve(s, syntheticRequest).Code != http.StatusCreated {
+	adm.now = func() time.Time { return clock }
+	if reserveAs(s, adm, syntheticRequest, "user-01").Code != http.StatusCreated {
 		t.Fatal("reservation failed")
 	}
 	if _, err := s.Consume(syntheticNonce, "1234"); err != nil {
@@ -154,12 +184,12 @@ func TestBYOKActiveSlotAutoRecoversAfterTTL(t *testing.T) {
 	if s.Complete(syntheticNonce, false) == nil || s.active == "" {
 		t.Fatal("ambiguous BYE freed the provider call slot early")
 	}
-	if reserve(s, strings.ReplaceAll(syntheticRequest, syntheticNonce, strings.Repeat("c", 32))).Code != http.StatusConflict {
+	if reserveAs(s, adm, strings.ReplaceAll(syntheticRequest, syntheticNonce, strings.Repeat("c", 32)), "user-01").Code != http.StatusConflict {
 		t.Fatal("new reservation admitted while active slot held")
 	}
 	// After the active TTL the slot auto-recovers with no manual reconciliation.
 	clock = clock.Add(activeTTL + time.Second)
-	if reserve(s, strings.ReplaceAll(syntheticRequest, syntheticNonce, strings.Repeat("c", 32))).Code != http.StatusCreated {
+	if reserveAs(s, adm, strings.ReplaceAll(syntheticRequest, syntheticNonce, strings.Repeat("c", 32)), "user-01").Code != http.StatusCreated {
 		t.Fatal("BYOK did not recover after ambiguous-teardown TTL")
 	}
 	if s.active != "" {
