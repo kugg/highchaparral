@@ -216,6 +216,24 @@
         "VGW-FENCE-SOFTPHONE-REG",
         "VGW-FENCE-INTENT"
       ]
+    },
+    {
+      "id": "VGW-BYOK-ADMISSION-001",
+      "statement": "A BYOK reservation allocates the shared pending slot only after the caller presents a server-verified principal (HMAC-signed session assertion from the trusted credential-entry/proxy boundary) with per-principal attempt limits and global bounds; client-controlled headers are supporting checks only and an unadmitted store fails closed.",
+      "preserves": [
+        "Legitimate same-origin reservations by an admitted principal complete the one-call flow unchanged.",
+        "Nonce one-call, ARI readback binding, credential redaction and active-TTL auto-recovery remain."
+      ],
+      "bug_classes": [
+        "unauthenticated-peer",
+        "cross-origin-reservation"
+      ],
+      "fences": [
+        "VGW-FENCE-BYOK-ADMISSION",
+        "VGW-FENCE-ORIGIN",
+        "VGW-FENCE-RESERVATION",
+        "VGW-FENCE-INTENT"
+      ]
     }
   ],
   "fences": [
@@ -488,6 +506,59 @@
             "repository": "kugg/highchaparral",
             "ref": "36354f49c59a6b36b8c97527fcf84651ef1bd070",
             "path": "vgw/softphone/test/browser.test.mjs"
+          }
+        }
+      ]
+    },
+    {
+      "id": "VGW-FENCE-BYOK-ADMISSION",
+      "kind": "hard",
+      "mechanism": "test",
+      "check": "vgw-byok-admission-contract",
+      "controls": [
+        {
+          "path": "internal/byok/admission_test.go",
+          "selector": "func TestBYOKFailClosedWithoutTrustedAdmission(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "db09ce5f0f3adabc57ffed993d57f08357fbc144",
+            "path": "vgw/internal/byok/admission_test.go"
+          }
+        },
+        {
+          "path": "internal/byok/admission_test.go",
+          "selector": "func TestBYOKReservationRefusesUnsignedForgedAndExpiredSessions(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "db09ce5f0f3adabc57ffed993d57f08357fbc144",
+            "path": "vgw/internal/byok/admission_test.go"
+          }
+        },
+        {
+          "path": "internal/byok/admission_test.go",
+          "selector": "func TestBYOKClientSuppliedIdentityHeadersRejectedWithoutAdmission(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "db09ce5f0f3adabc57ffed993d57f08357fbc144",
+            "path": "vgw/internal/byok/admission_test.go"
+          }
+        },
+        {
+          "path": "internal/byok/admission_test.go",
+          "selector": "func TestBYOKUnauthenticatedCannotMonopolizeSlot(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "db09ce5f0f3adabc57ffed993d57f08357fbc144",
+            "path": "vgw/internal/byok/admission_test.go"
+          }
+        },
+        {
+          "path": "internal/byok/admission_test.go",
+          "selector": "func TestBYOKPerPrincipalAttemptLimit(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "db09ce5f0f3adabc57ffed993d57f08357fbc144",
+            "path": "vgw/internal/byok/admission_test.go"
           }
         }
       ]
