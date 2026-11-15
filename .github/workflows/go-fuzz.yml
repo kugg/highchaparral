@@ -104,9 +104,9 @@ jobs:
           path: ${{ runner.temp }}/fuzz-evidence/${{ matrix.target }}
           if-no-files-found: error
           retention-days: 30
-      - name: Require conclusively generated SARIF
+      - name: Require verified fuzz-failure SARIF
         id: sarif
-        if: always()
+        if: always() && steps.campaign.outcome == 'failure'
         working-directory: vgw
         run: >-
           python3 -B scripts/verify_fuzz_sarif.py
@@ -115,6 +115,7 @@ jobs:
       - name: Upload fuzz diagnostic to code scanning
         if: >-
           always() &&
+          steps.campaign.outcome == 'failure' &&
           steps.evidence.outcome == 'success' &&
           steps.sarif.outcome == 'success'
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3

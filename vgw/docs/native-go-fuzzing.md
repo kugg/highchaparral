@@ -56,15 +56,22 @@ omitted by artifact upload. Replay commands are stored as argv arrays and
 separately rendered with shell-safe quoting. The receipt also binds the GitHub
 workflow, run ID, attempt and ref when executed in Actions.
 
-Conclusive reviewed campaigns also create `results.sarif` as a derived
-observability summary. A confirmed fuzz failure produces one diagnostic at the
-fuzz-target declaration with a target-stable fingerprint; a confirmed clean
-campaign produces a valid zero-result report. The receipt records the stable
-per-target category and exact artifact identity referenced by the diagnostic.
-The artifact bundle remains the authoritative reproduction evidence. CI checks
-the SARIF hash against that receipt before uploading it to code scanning. Setup,
-capture or SARIF-generation errors produce no publishable clean report. The
+Only a confirmed reviewed-target fuzz failure creates `results.sarif`. It
+contains one diagnostic at the fuzz-target declaration with a target-stable
+fingerprint. A clean bounded campaign still retains its ordinary receipt and
+artifact, but it is nondiscovery rather than resolution evidence: it creates no
+SARIF and cannot clear an unresolved diagnostic. The receipt records this as
+`clean-campaign-is-not-resolution-evidence` with publication disabled.
+
+The artifact bundle remains the authoritative reproduction evidence. Before a
+failure SARIF can be uploaded, CI checks that the receipt represents a real
+target failure, contains a safe captured corpus with matching hashes and replay
+argv, has exact hosted run provenance, and hash-binds the SARIF. Setup, capture,
+incomplete failure evidence or SARIF-generation errors are not publishable. The
 synthetic controlled-failure fixture is explicitly excluded from code scanning.
+Evidence-bound automated resolution is intentionally deferred: it requires a
+durable unresolved-corpus ledger and successful normal plus race replay against
+the repaired exact revision before any clean analysis may be published.
 
 Download the failed job's `go-fuzz-<target>-<run>-<attempt>` artifact, restore a
 captured corpus file to the package's `testdata/fuzz/<target>/` directory, and

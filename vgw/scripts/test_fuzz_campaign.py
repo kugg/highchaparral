@@ -161,20 +161,51 @@ class CampaignTest(unittest.TestCase):
             )
             verify_fuzz_sarif.verify(evidence, TARGET)
 
-    def test_clean_campaign_generates_valid_zero_result_sarif(self):
+    def test_clean_campaign_cannot_publish_sarif(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = self.root(temporary)
             status, receipt, evidence = self.campaign(root, FakeRunner(root))
             self.assertEqual(status, 0)
             self.assertEqual(receipt["status"], "passed")
-            self.assertEqual(receipt["code_scanning"]["result_count"], 0)
-            report = json.loads((evidence / "results.sarif").read_text(encoding="utf-8"))
-            self.assertEqual(report["version"], "2.1.0")
-            self.assertEqual(report["runs"][0]["results"], [])
-            verify_fuzz_sarif.verify(evidence, TARGET)
-            (evidence / "results.sarif").write_text("{}\n", encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "hash-bound"):
+            self.assertEqual(
+                receipt["code_scanning"]["reason"],
+                "clean-campaign-is-not-resolution-evidence",
+            )
+            self.assertFalse(receipt["code_scanning"]["generated"])
+            self.assertFalse(receipt["code_scanning"]["publication_eligible"])
+            self.assertFalse((evidence / "results.sarif").exists())
+            with self.assertRaisesRegex(ValueError, "does not authorize"):
                 verify_fuzz_sarif.verify(evidence, TARGET)
+
+    def test_incomplete_failure_evidence_cannot_publish(self):
+        mutations = {
+            "missing corpus record": lambda receipt, evidence: receipt.update(captured_corpus=[]),
+            "missing replay argv": lambda receipt, evidence: receipt.update(replay_argv=[]),
+            "missing run id": lambda receipt, evidence: receipt["workflow_provenance"].update(
+                run_id=None,
+            ),
+            "missing corpus bytes": lambda receipt, evidence: (
+                evidence / "corpus/deadbeef"
+            ).unlink(),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as temporary:
+                root = self.root(temporary)
+                runner = FakeRunner(
+                    root,
+                    fuzz_exit=1,
+                    fuzz_output=fuzzed(TARGET, "fail"),
+                    write_corpus=True,
+                )
+                environment = {"GITHUB_RUN_ID": "1234", "GITHUB_RUN_ATTEMPT": "2"}
+                _, receipt, evidence = self.campaign(root, runner, environment=environment)
+                mutate(receipt, evidence)
+                (evidence / "receipt.json").write_text(
+                    json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                with self.assertRaisesRegex(ValueError, "failure evidence|captured corpus"):
+                    verify_fuzz_sarif.verify(evidence, TARGET)
 
     def test_sarif_fingerprint_is_stable_and_fixture_is_excluded(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -239,6 +270,11 @@ class CampaignTest(unittest.TestCase):
         campaign, fixture = workflow.split("  controlled-failure-contract:", 1)
         self.assertIn("security-events: write", campaign)
         self.assertIn("category: native-go-fuzz/${{ matrix.target }}", campaign)
+        self.assertGreaterEqual(
+            campaign.count("steps.campaign.outcome == 'failure'"),
+            2,
+        )
+        self.assertIn("steps.campaign.outcome != 'success'", campaign)
         self.assertNotIn("security-events: write", fixture)
         self.assertNotIn("upload-sarif", fixture)
 
@@ -246,7 +282,13 @@ class CampaignTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = self.root(temporary)
             (root / "internal/asterisk/media_test.go").unlink()
-            status, receipt, evidence = self.campaign(root, FakeRunner(root))
+            runner = FakeRunner(
+                root,
+                fuzz_exit=1,
+                fuzz_output=fuzzed(TARGET, "fail"),
+                write_corpus=True,
+            )
+            status, receipt, evidence = self.campaign(root, runner)
             self.assertEqual(status, 2)
             self.assertEqual(receipt["status"], "sarif-generation-failed")
             self.assertFalse(receipt["code_scanning"]["publication_eligible"])

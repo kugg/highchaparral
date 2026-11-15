@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 
 
 def sha256(path: Path) -> str:
@@ -18,7 +19,12 @@ def verify(evidence: Path, target: str) -> dict[str, object]:
     metadata = receipt.get("code_scanning", {})
     if (
         receipt.get("target") != target
-        or receipt.get("status") not in {"passed", "fuzz-failed"}
+        or receipt.get("status") != "fuzz-failed"
+        or receipt.get("campaign_status") != "fuzz-failed"
+        or receipt.get("target_executed") is not True
+        or receipt.get("target_result") != "fail"
+        or not isinstance(receipt.get("command_exit"), int)
+        or receipt.get("command_exit") == 0
         or not metadata.get("generated")
         or not metadata.get("publication_eligible")
         or metadata.get("path") != "results.sarif"
@@ -26,10 +32,54 @@ def verify(evidence: Path, target: str) -> dict[str, object]:
     ):
         raise ValueError("receipt does not authorize SARIF publication")
 
-    sarif = evidence / "results.sarif"
+    commit = receipt.get("source_commit")
+    provenance = receipt.get("workflow_provenance", {})
+    if (
+        not isinstance(commit, str)
+        or re.fullmatch(r"[a-f0-9]{40}", commit) is None
+        or not provenance.get("run_id")
+        or not provenance.get("run_attempt")
+    ):
+        raise ValueError("failure evidence lacks exact hosted provenance")
+
     manifest = {
         entry.get("path"): entry for entry in receipt.get("artifact_files", [])
+        if isinstance(entry, dict)
     }
+    captured = receipt.get("captured_corpus")
+    replay_argv = receipt.get("replay_argv")
+    if not isinstance(captured, list) or not captured or not isinstance(replay_argv, list):
+        raise ValueError("failure evidence lacks captured corpus and replay argv")
+    package = receipt.get("package")
+    if not isinstance(package, str):
+        raise ValueError("failure evidence lacks its package")
+    expected_replay: list[list[str]] = []
+    for entry in captured:
+        name = entry.get("name") if isinstance(entry, dict) else None
+        digest = entry.get("sha256") if isinstance(entry, dict) else None
+        if (
+            not isinstance(name, str)
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", name) is None
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[a-f0-9]{64}", digest) is None
+        ):
+            raise ValueError("failure evidence contains an unsafe corpus record")
+        corpus_path = evidence / "corpus" / name
+        binding = manifest.get(f"corpus/{name}")
+        if (
+            not corpus_path.is_file()
+            or corpus_path.is_symlink()
+            or not isinstance(binding, dict)
+            or binding.get("sha256") != digest
+            or binding.get("sha256") != sha256(corpus_path)
+            or binding.get("bytes") != corpus_path.stat().st_size
+        ):
+            raise ValueError("captured corpus is not hash-bound to the authoritative receipt")
+        expected_replay.append(["go", "test", f"-run=^{target}/{name}$", package])
+    if replay_argv != expected_replay:
+        raise ValueError("captured corpus replay argv does not match the receipt")
+
+    sarif = evidence / "results.sarif"
     binding = manifest.get("results.sarif")
     if (
         not sarif.is_file()
@@ -45,7 +95,7 @@ def verify(evidence: Path, target: str) -> dict[str, object]:
         raise ValueError("SARIF envelope is invalid")
     run = report["runs"][0]
     results = run.get("results")
-    expected_count = 1 if receipt["status"] == "fuzz-failed" else 0
+    expected_count = 1
     if (
         not isinstance(results, list)
         or len(results) != expected_count
