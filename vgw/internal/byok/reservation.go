@@ -71,6 +71,7 @@ func (c *Credentials) Clear() {
 
 type reservation struct {
 	identity string
+	account  string
 	password []byte
 	target   string
 	nonce    string
@@ -81,6 +82,7 @@ type Store struct {
 	mu            sync.Mutex
 	origins       map[string]string // exact HTTPS Origin -> matching request Host
 	now           func() time.Time
+	admission     Admission        // verified login boundary; nil closes reservations
 	pending       *reservation
 	active        string
 	activeExpires time.Time
@@ -99,6 +101,16 @@ func (*Store) String() string { return "BYOK reservation store [redacted]" }
 // New permits only an exact HTTPS origin. The loopback Go HTTP listener
 // is published solely through a separately owned same-origin APU proxy.
 func New(origins ...string) (*Store, error) {
+	return newStore(nil, origins...)
+}
+
+// NewWithAdmission installs a verified-login boundary. Reservations are
+// refused (503) until a principal is admitted; nil closes the store.
+func NewWithAdmission(admission Admission, origins ...string) (*Store, error) {
+	return newStore(admission, origins...)
+}
+
+func newStore(admission Admission, origins ...string) (*Store, error) {
 	if len(origins) == 0 || len(origins) > 2 {
 		return nil, reject()
 	}
@@ -112,7 +124,7 @@ func New(origins ...string) (*Store, error) {
 		}
 		allowed[origin] = u.Host
 	}
-	return &Store{origins: allowed, now: time.Now}, nil
+	return &Store{origins: allowed, now: time.Now, admission: admission}, nil
 }
 
 func clear(raw []byte) {
@@ -132,6 +144,19 @@ func (s *Store) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		(strings.Split(r.Header.Get("Content-Type"), ";")[0] != "application/json") ||
 		(r.Header.Get("Sec-Fetch-Site") != "" && r.Header.Get("Sec-Fetch-Site") != "same-origin") {
 		refuse(http.StatusForbidden)
+		return
+	}
+	// Server-verified login is mandatory before any reservation state is
+	// allocated, so a caller cannot monopolize the slot using client-set
+	// headers (JER-14). A store without an installed admission verifier is
+	// fail-closed: no reservation is ever accepted.
+	if s.admission == nil {
+		refuse(http.StatusServiceUnavailable)
+		return
+	}
+	account, err := s.admission.Principal(r)
+	if err != nil {
+		refuse(http.StatusUnauthorized)
 		return
 	}
 	data, err := io.ReadAll(io.LimitReader(r.Body, 1025))
@@ -167,7 +192,8 @@ func (s *Store) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		refuse(http.StatusConflict)
 		return
 	}
-	s.pending = &reservation{identity: input.Identity, password: []byte(input.Password),
+	s.pending = &reservation{identity: input.Identity, account: account,
+		password: []byte(input.Password),
 		target: input.Destination, nonce: input.Nonce, expires: s.now().Add(45 * time.Second)}
 	w.WriteHeader(http.StatusCreated)
 	_, _ = io.WriteString(w, `{"reserved":true}`)

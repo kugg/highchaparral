@@ -103,6 +103,19 @@ func runBYOK(out io.Writer, options serviceconfig.RuntimeOptions) (runErr error)
 	if err != nil {
 		return errors.New("exact BYOK HTTPS origins unavailable")
 	}
+	sessionSecret, err := serviceconfig.ReadBYOKSessionSecretWithOptions(options)
+	if err != nil {
+		return errors.New("owner-only BYOK session admission secret unavailable")
+	}
+	admission, err := byok.NewHMACAdmission(sessionSecret)
+	if err != nil {
+		return errors.New("BYOK session admission bind unavailable")
+	}
+	defer admission.Close()
+	store, err = byok.NewWithAdmission(admission, config.Origins[:]...)
+	if err != nil {
+		return errors.New("BYOK admission store unavailable")
+	}
 	socketPath := options.SocketPath()
 	if _, err := os.Lstat(socketPath); err == nil || !os.IsNotExist(err) {
 		return errors.New("stale/foreign BYOK socket requires review")
