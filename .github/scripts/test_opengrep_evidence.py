@@ -217,7 +217,9 @@ class ReceiptTests(unittest.TestCase):
             publication_args = Namespace(
                 receipt=str(receipt_path), sarif=args.sarif, scope=args.scope,
                 category="opengrep-test-evidence", artifact_name="opengrep-test-evidence-1234-2",
-                run_id="1234", run_attempt="2",
+                run_id="1234", run_attempt="2", root=str(root),
+                repository=args.repository, workflow_sha=args.workflow_sha, head_sha=args.head_sha,
+                rules=args.rules, manifest=args.manifest,
             )
             self.assertEqual(evidence.verify_publication(publication_args), 0)
 
@@ -233,6 +235,45 @@ class ReceiptTests(unittest.TestCase):
             Path(args.sarif).write_text(json.dumps(sarif), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "finding-count-mismatch"):
                 evidence.verify_publication(publication_args)
+
+    def test_publication_gate_rejects_stale_revision_rules_and_manifest_bindings(self):
+        mutations = {
+            "workflow revision": lambda receipt: receipt["source"].update(workflow_sha="0" * 40),
+            "actual revision": lambda receipt: receipt["source"].update(actual_git_head="0" * 40),
+            "pull request revision": lambda receipt: receipt["source"].update(
+                pull_request_head_sha="0" * 40,
+            ),
+            "rules digest": lambda receipt: receipt["rules"].update(sha256="0" * 64),
+            "manifest digest": lambda receipt: receipt["artifact_sha256"].update(
+                manifest="0" * 64,
+            ),
+            "manifest content": lambda receipt: receipt["targets"].update(file_count=999),
+            "invocation rules digest": lambda receipt: receipt["invocation"]["exact"]["rules"].update(
+                sha256="0" * 64,
+            ),
+            "invocation manifest digest": lambda receipt: receipt["invocation"]["exact"][
+                "target_manifest"
+            ].update(sha256="0" * 64),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                args, _ = receipt_fixture(root)
+                evidence.build_receipt(args)
+                receipt_path = Path(args.output) / "evidence.json"
+                receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+                mutate(receipt)
+                receipt_path.write_bytes(evidence.canonical(receipt))
+                publication_args = Namespace(
+                    receipt=str(receipt_path), sarif=args.sarif, scope=args.scope,
+                    category="opengrep-test-evidence",
+                    artifact_name="opengrep-test-evidence-1234-2",
+                    run_id="1234", run_attempt="2", root=str(root),
+                    repository=args.repository, workflow_sha=args.workflow_sha,
+                    head_sha=args.head_sha, rules=args.rules, manifest=args.manifest,
+                )
+                with self.assertRaisesRegex(ValueError, "publication refused"):
+                    evidence.verify_publication(publication_args)
 
     def test_swapped_manifest_targets_rules_and_head_fail_binding(self):
         mutations = {
@@ -369,6 +410,11 @@ class WorkflowTests(unittest.TestCase):
         self.assertLess(publication, failure)
         self.assertIn("--category \"opengrep-${{ matrix.scope }}\"", text)
         self.assertIn("--run-attempt \"${GITHUB_RUN_ATTEMPT}\"", text)
+        self.assertIn("--repository \"${GITHUB_REPOSITORY}\"", text)
+        self.assertIn("--workflow-sha \"${GITHUB_SHA}\"", text)
+        self.assertIn("--head-sha \"${PR_HEAD_SHA}\"", text)
+        self.assertIn("--rules \"${OPENGREP_RULES}\"", text)
+        self.assertIn("--manifest \"${OUTPUT}/target-manifest.json\"", text)
 
 
 if __name__ == "__main__":

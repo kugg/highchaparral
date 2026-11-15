@@ -140,7 +140,10 @@ jobs:
             --receipt "${OUTPUT}/evidence.json" --sarif "${OUTPUT}/results.sarif" \
             --scope "${{ matrix.scope }}" --category "opengrep-${{ matrix.scope }}" \
             --artifact-name "opengrep-${{ matrix.scope }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
-            --run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}"
+            --run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --root . --repository "${GITHUB_REPOSITORY}" --workflow-sha "${GITHUB_SHA}" \
+            --head-sha "${PR_HEAD_SHA}" --rules "${OPENGREP_RULES}" \
+            --manifest "${OUTPUT}/target-manifest.json"
 
       - name: Publish candidate SARIF to code scanning
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3

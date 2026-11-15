@@ -553,6 +553,7 @@ def build_receipt(args: argparse.Namespace) -> int:
 def verify_publication(args: argparse.Namespace) -> int:
     receipt, receipt_error = load_json(Path(args.receipt))
     sarif, sarif_error = load_json(Path(args.sarif))
+    manifest, manifest_error = load_json(Path(args.manifest))
     errors: list[str] = []
     if receipt_error or not isinstance(receipt, dict):
         errors.append(f"receipt:{receipt_error or 'not-an-object'}")
@@ -560,6 +561,38 @@ def verify_publication(args: argparse.Namespace) -> int:
     if sarif_error or not isinstance(sarif, dict):
         errors.append(f"sarif:{sarif_error or 'not-an-object'}")
         sarif = {}
+    if manifest_error or not isinstance(manifest, dict):
+        errors.append(f"manifest:{manifest_error or 'not-an-object'}")
+        manifest = {}
+    root = Path(args.root).resolve()
+    try:
+        current_state = git_state(root)
+    except (OSError, subprocess.SubprocessError) as error:
+        errors.append(f"repository:state-unavailable:{type(error).__name__}")
+        current_state = None
+    if current_state is not None:
+        if current_state.get("relevant_dirty_entries"):
+            errors.append("repository:relevant-inputs-dirty")
+        if current_state.get("git_head") != args.workflow_sha:
+            errors.append("repository:workflow-sha-mismatch")
+        try:
+            if manifest != make_manifest(args.scope, tracked(root), current_state):
+                errors.append("manifest:current-scope-mismatch")
+            validate_target_paths(root, manifest_targets(manifest))
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            errors.append(f"manifest:current-scope-invalid:{type(error).__name__}")
+    try:
+        rules_path, rules_relative = repository_owned_path(root, args.rules)
+        rules_digest = sha256(rules_path)
+    except ValueError:
+        rules_relative = ""
+        rules_digest = None
+        errors.append("rules:path-invalid")
+    if rules_digest is None:
+        errors.append("rules:file-missing")
+    manifest_digest = sha256(Path(args.manifest))
+    if manifest_digest is None:
+        errors.append("manifest:file-missing")
     expected_category = sarif_category(args.scope)
     expected_artifact = artifact_identity(args.scope, args.run_id, args.run_attempt)
     if args.category != expected_category:
@@ -578,6 +611,36 @@ def verify_publication(args: argparse.Namespace) -> int:
         errors.append("receipt:scanner-errors-present")
     if (receipt.get("input_binding") or {}).get("status") != "verified":
         errors.append("receipt:input-binding-not-verified")
+    source = receipt.get("source") or {}
+    if source.get("repository") != args.repository:
+        errors.append("receipt:repository-mismatch")
+    if source.get("workflow_sha") != args.workflow_sha:
+        errors.append("receipt:workflow-sha-mismatch")
+    if source.get("actual_git_head") != args.workflow_sha:
+        errors.append("receipt:actual-git-head-mismatch")
+    if source.get("pull_request_head_sha") != (args.head_sha or None):
+        errors.append("receipt:pull-request-head-mismatch")
+    rules = receipt.get("rules") or {}
+    if rules.get("path") != rules_relative:
+        errors.append("receipt:rules-path-mismatch")
+    if rules.get("sha256") != rules_digest:
+        errors.append("receipt:rules-digest-mismatch")
+    if receipt.get("targets") != manifest:
+        errors.append("receipt:manifest-content-mismatch")
+    artifact_digests = receipt.get("artifact_sha256") or {}
+    if artifact_digests.get("manifest") != manifest_digest:
+        errors.append("receipt:manifest-digest-mismatch")
+    invocation = ((receipt.get("invocation") or {}).get("exact") or {})
+    target_binding = invocation.get("target_manifest") or {}
+    if target_binding.get("sha256") != manifest_digest:
+        errors.append("receipt:invocation-manifest-digest-mismatch")
+    invocation_rules = invocation.get("rules") or {}
+    if invocation_rules.get("path") != rules_relative:
+        errors.append("receipt:invocation-rules-path-mismatch")
+    if invocation_rules.get("sha256") != rules_digest:
+        errors.append("receipt:invocation-rules-digest-mismatch")
+    if current_state is not None and invocation.get("repository_state") != current_state:
+        errors.append("receipt:invocation-git-state-mismatch")
     publication = ((receipt.get("publication") or {}).get("github_code_scanning") or {})
     if publication.get("category") != expected_category:
         errors.append("receipt:category-mismatch")
@@ -664,8 +727,13 @@ def parser() -> argparse.ArgumentParser:
     fixture.add_argument("--expected", required=True)
     fixture.set_defaults(action=verify_fixture)
     publication = commands.add_parser("verify-publication")
-    for name in ("receipt", "sarif", "scope", "category", "artifact_name", "run_id", "run_attempt"):
+    for name in (
+        "receipt", "sarif", "scope", "category", "artifact_name", "run_id", "run_attempt",
+        "repository", "workflow_sha", "rules", "manifest",
+    ):
         publication.add_argument("--" + name.replace("_", "-"), required=True)
+    publication.add_argument("--root", default=".")
+    publication.add_argument("--head-sha", default="")
     publication.set_defaults(action=verify_publication)
     return result
 
