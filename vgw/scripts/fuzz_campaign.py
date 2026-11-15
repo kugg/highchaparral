@@ -161,7 +161,14 @@ def write_sarif(
             "category": None,
             "reason": "synthetic-fixture-excluded",
         }
-    if status not in {"passed", "fuzz-failed"}:
+    if status == "passed":
+        return {
+            "generated": False,
+            "publication_eligible": False,
+            "category": category,
+            "reason": "clean-campaign-is-not-resolution-evidence",
+        }
+    if status != "fuzz-failed":
         return {
             "generated": False,
             "publication_eligible": False,
@@ -205,7 +212,6 @@ def write_sarif(
             "target": target,
         },
     }
-    results = [result] if status == "fuzz-failed" else []
     report = {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
         "version": "2.1.0",
@@ -232,7 +238,7 @@ def write_sarif(
                         ],
                     }
                 },
-                "results": results,
+                "results": [result],
             }
         ],
     }
@@ -248,7 +254,7 @@ def write_sarif(
         "publication_eligible": True,
         "category": category,
         "path": "results.sarif",
-        "result_count": len(results),
+        "result_count": 1,
         "stable_fingerprint": fingerprint,
         "authoritative_evidence_artifact": artifact_identity,
     }
