@@ -46,6 +46,10 @@
     {
       "id": "failed-registration-lifecycle",
       "definition": "A failed browser SIP registration retains a credential-bearing agent or prevents safe manual retry."
+    },
+    {
+      "id": "unverified-session-allocation",
+      "definition": "Call-affecting state is allocated on the authority of client-controlled headers or unauthenticated claims instead of a server-verified session/principal."
     }
   ],
   "claims": [
@@ -215,6 +219,20 @@
       "fences": [
         "VGW-FENCE-SOFTPHONE-REG",
         "VGW-FENCE-INTENT"
+      ]
+    },
+    {
+      "id": "VGW-BYOK-ADMISSION-001",
+      "statement": "A BYOK reservation is allocated only after a server-verified expiring session assertion proves the calling principal; per-principal admission attempts are bounded and a store without a verifier fails closed.",
+      "preserves": [
+        "A logged-in caller can reserve and complete exactly one BYOK call."
+      ],
+      "bug_classes": [
+        "unverified-session-allocation",
+        "cross-origin-reservation"
+      ],
+      "fences": [
+        "VGW-FENCE-BYOK-ADMISSION"
       ]
     }
   ],
@@ -488,6 +506,32 @@
             "repository": "kugg/highchaparral",
             "ref": "36354f49c59a6b36b8c97527fcf84651ef1bd070",
             "path": "vgw/softphone/test/browser.test.mjs"
+          }
+        }
+      ]
+    },
+    {
+      "id": "VGW-FENCE-BYOK-ADMISSION",
+      "kind": "hard",
+      "mechanism": "test",
+      "check": "vgw-admission-contract",
+      "controls": [
+        {
+          "path": "internal/byok/admission.go",
+          "selector": "func (a *HMACAdmission) Principal(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "bd0a5093c93df28d4bf2868d8fc275af966fd38e",
+            "path": "vgw/internal/byok/admission.go"
+          }
+        },
+        {
+          "path": "internal/byok/admission_challenge_test.go",
+          "selector": "func TestBYOKAdmissionRejectsHeaderOnlyFloodBeforeState(",
+          "introduced": {
+            "repository": "kugg/highchaparral",
+            "ref": "bd0a5093c93df28d4bf2868d8fc275af966fd38e",
+            "path": "vgw/internal/byok/admission_challenge_test.go"
           }
         }
       ]
