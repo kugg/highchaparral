@@ -117,6 +117,9 @@ type outcome struct {
 	mediaProfile, answerTransport, keying, suite      string
 	peerBinding                                       string
 	authenticatedMedia, downgradeRejected             bool
+	provisionalSDPCount                               int
+	provisionalTransport                              string
+	finalSDP                                          bool
 }
 
 type mediaOffer struct {
@@ -178,6 +181,13 @@ func inspectMediaAnswer(profile string, response *sip.Response) (outcome, error)
 			setup = role == "active" || role == "passive" || role == "actpass"
 		}
 	}
+	// A provisional SDP answer can describe early media without containing the
+	// keying material that will be present in the final answer. It is useful
+	// evidence, but it is not the negotiated session and must never abort the
+	// INVITE. The final 2xx answer is validated below.
+	if response.StatusCode < 200 {
+		return result, nil
+	}
 	switch profile {
 	case "plaintext":
 		if result.answerTransport != "RTP/AVP" {
@@ -200,6 +210,28 @@ func inspectMediaAnswer(profile string, response *sip.Response) (outcome, error)
 		return result, errors.New("unreviewed media profile")
 	}
 	return result, nil
+}
+
+// observeMediaResponse keeps provisional and final SDP evidence distinct.
+// It returns a negotiation error only for a final response. No raw SDP,
+// addresses, key material or fingerprints are retained.
+func observeMediaResponse(profile string, response *sip.Response, result *outcome) error {
+	observed, err := inspectMediaAnswer(profile, response)
+	if observed.answerTransport == "" {
+		return err
+	}
+	if response.StatusCode < 200 {
+		result.provisionalSDPCount++
+		result.provisionalTransport = observed.answerTransport
+		return nil
+	}
+	result.finalSDP = true
+	result.answerTransport = observed.answerTransport
+	result.keying = observed.keying
+	result.suite = observed.suite
+	result.peerBinding = observed.peerBinding
+	result.downgradeRejected = observed.downgradeRejected
+	return err
 }
 
 func secureTransportMatches(profile, answer string) bool {
@@ -311,15 +343,7 @@ func oneCall(ctx context.Context, c config) (result outcome, category string) {
 	call, med, err := dg.Invite(inviteCtx, recipient, diago.InviteOptions{
 		Transport: "tls", Username: c.creds.user, Password: c.creds.pass,
 		OnResponse: func(response *sip.Response) error {
-			observed, inspectErr := inspectMediaAnswer(c.mediaProfile, response)
-			if observed.answerTransport != "" {
-				result.answerTransport = observed.answerTransport
-				result.keying = observed.keying
-				result.suite = observed.suite
-				result.peerBinding = observed.peerBinding
-				result.downgradeRejected = observed.downgradeRejected
-			}
-			return inspectErr
+			return observeMediaResponse(c.mediaProfile, response, &result)
 		},
 	})
 	stopInvite()
@@ -344,7 +368,7 @@ func oneCall(ctx context.Context, c config) (result outcome, category string) {
 			session.Raddr.IP.IsMulticast() || session.Raddr.IP.IsUnspecified())) {
 		return result, "provider-sdp-refused"
 	}
-	if session.SecureRTP != offer.mode || !secureTransportMatches(c.mediaProfile, result.answerTransport) {
+	if !result.finalSDP || session.SecureRTP != offer.mode || !secureTransportMatches(c.mediaProfile, result.answerTransport) {
 		result.downgradeRejected = result.answerTransport == "RTP/AVP" && offer.mode > 0
 		return result, "media-downgrade-refused"
 	}
@@ -503,7 +527,10 @@ func main() {
 		"answer_transport", result.answerTransport, "keying", result.keying,
 		"suite", result.suite, "peer_binding", result.peerBinding,
 		"authenticated_media", result.authenticatedMedia,
-		"downgrade_rejected", result.downgradeRejected)
+		"downgrade_rejected", result.downgradeRejected,
+		"provisional_sdp_count", result.provisionalSDPCount,
+		"provisional_transport", result.provisionalTransport,
+		"final_sdp", result.finalSDP)
 	if category != "pass" {
 		os.Exit(2)
 	}

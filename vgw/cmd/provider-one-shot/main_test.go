@@ -168,6 +168,30 @@ func TestMediaAnswerInspectionRejectsDowngradeWithoutRetainingSecrets(t *testing
 	}
 }
 
+func TestProvisionalSDPDoesNotAbortBeforeAuthenticatedFinalAnswer(t *testing.T) {
+	var observed outcome
+	provisional := &sip.Response{StatusCode: sip.StatusSessionInProgress}
+	provisional.AppendHeader(sip.NewHeader("Content-Type", "application/sdp"))
+	provisional.SetBody([]byte("v=0\r\nm=audio 4000 RTP/SAVP 8\r\na=rtpmap:8 PCMA/8000\r\n"))
+	if err := observeMediaResponse("sdes", provisional, &observed); err != nil {
+		t.Fatal("provisional SDP aborted the invitation before the final answer")
+	}
+	if observed.provisionalSDPCount != 1 || observed.provisionalTransport != "RTP/SAVP" || observed.finalSDP {
+		t.Fatal("provisional SDP was not retained as a separate sanitized observation")
+	}
+
+	final := &sip.Response{StatusCode: sip.StatusOK}
+	final.AppendHeader(sip.NewHeader("Content-Type", "application/sdp"))
+	final.SetBody([]byte("v=0\r\nm=audio 4000 RTP/SAVP 8\r\na=crypto:1 AES_CM_128_HMAC_SHA1_80 inline:DO-NOT-RETAIN\r\n"))
+	if err := observeMediaResponse("sdes", final, &observed); err != nil {
+		t.Fatal("authenticated final SDES answer was rejected")
+	}
+	if !observed.finalSDP || observed.answerTransport != "RTP/SAVP" || observed.keying != "sdes" ||
+		strings.Contains(fmt.Sprint(observed), "DO-NOT-RETAIN") {
+		t.Fatal("final answer was not validated or retained only as safe categories")
+	}
+}
+
 func TestDTLSAnswerInspectionRequiresFingerprintAndSetup(t *testing.T) {
 	response := &sip.Response{StatusCode: sip.StatusOK}
 	response.AppendHeader(sip.NewHeader("Content-Type", "application/sdp"))
@@ -250,6 +274,13 @@ func TestAttemptStageIsOneUseOwnerOnlyAndKeepsSanitizedResult(t *testing.T) {
 	}
 	if profile, err := stageMediaProfile("srtp-dtls-v1"); err != nil || profile != "dtls" {
 		t.Fatal("DTLS stage was not bound to its fixed media profile")
+	}
+	sdesV2Dir, err := stageDir("srtp-sdes-v2-final-answer")
+	if err != nil || sdesV2Dir == sdesDir || !automatedStage("srtp-sdes-v2-final-answer") {
+		t.Fatal("corrected SDES final-answer probe could reuse a historical stage")
+	}
+	if profile, err := stageMediaProfile("srtp-sdes-v2-final-answer"); err != nil || profile != "sdes" {
+		t.Fatal("corrected SDES stage was not bound to its fixed media profile")
 	}
 	if err := requireAutomatedTarget(announcementDir, "1234"); err != nil {
 		t.Fatal("exact reviewed private target refused")

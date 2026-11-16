@@ -77,3 +77,11 @@ bounded call lifecycle booleans. It never stores SDP, SDES keys, DTLS
 fingerprints, credentials, addresses, headers, target numbers or audio. These
 probes establish provider capability; they do not implement the production VGW
 repair or authorize fallback to plaintext media.
+
+The consumed `srtp-sdes-v1` probe treated an incomplete provisional SDP as a
+final answer and could abort before the provider's final negotiation. It is
+historical evidence, not a provider capability verdict. The separately named
+`srtp-sdes-v2-final-answer` stage corrects that measurement error: provisional
+SDP is recorded only as a safe transport/count observation, while the final
+2xx SDP must carry the accepted SDES profile. Success still additionally
+requires returned media to pass SRTP authentication and decrypt as PCMA.

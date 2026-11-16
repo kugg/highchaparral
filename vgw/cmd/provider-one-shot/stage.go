@@ -22,6 +22,8 @@ func stageDir(testID string) (string, error) {
 		return "secrets/attended-provider-announcement-v1", nil
 	case "srtp-sdes-v1":
 		return "secrets/attended-provider-srtp-sdes-v1", nil
+	case "srtp-sdes-v2-final-answer":
+		return "secrets/attended-provider-srtp-sdes-v2-final-answer", nil
 	case "srtp-dtls-v1":
 		return "secrets/attended-provider-srtp-dtls-v1", nil
 	default:
@@ -33,7 +35,7 @@ func stageMediaProfile(testID string) (string, error) {
 	switch testID {
 	case "first", "maze", "announcement":
 		return "plaintext", nil
-	case "srtp-sdes-v1":
+	case "srtp-sdes-v1", "srtp-sdes-v2-final-answer":
 		return "sdes", nil
 	case "srtp-dtls-v1":
 		return "dtls", nil
@@ -43,7 +45,12 @@ func stageMediaProfile(testID string) (string, error) {
 }
 
 func automatedStage(testID string) bool {
-	return testID == "announcement" || testID == "srtp-sdes-v1" || testID == "srtp-dtls-v1"
+	switch testID {
+	case "announcement", "srtp-sdes-v1", "srtp-sdes-v2-final-answer", "srtp-dtls-v1":
+		return true
+	default:
+		return false
+	}
 }
 
 // prepareAutomatedTarget is a local, private one-use approval for the
@@ -180,25 +187,29 @@ func recordResult(dirName, category string, result outcome) error {
 	// No account identity, registrar header, IP, SDP, credential, key material,
 	// fingerprint or media. Only fixed negotiation/result categories are kept.
 	if err := json.NewEncoder(file).Encode(struct {
-		Category           string `json:"category"`
-		Registered         bool   `json:"registered"`
-		RegisterStatus     int    `json:"register_status"`
-		InviteStatus       int    `json:"invite_status"`
-		Answered           bool   `json:"answered"`
-		MediaReturned      bool   `json:"media_returned"`
-		BYE                bool   `json:"bye"`
-		Unregistered       bool   `json:"unregistered"`
-		MediaProfile       string `json:"media_profile"`
-		AnswerTransport    string `json:"answer_transport"`
-		Keying             string `json:"keying"`
-		Suite              string `json:"suite"`
-		PeerBinding        string `json:"peer_binding"`
-		AuthenticatedMedia bool   `json:"authenticated_media"`
-		DowngradeRejected  bool   `json:"downgrade_rejected"`
+		Category             string `json:"category"`
+		Registered           bool   `json:"registered"`
+		RegisterStatus       int    `json:"register_status"`
+		InviteStatus         int    `json:"invite_status"`
+		Answered             bool   `json:"answered"`
+		MediaReturned        bool   `json:"media_returned"`
+		BYE                  bool   `json:"bye"`
+		Unregistered         bool   `json:"unregistered"`
+		MediaProfile         string `json:"media_profile"`
+		AnswerTransport      string `json:"answer_transport"`
+		Keying               string `json:"keying"`
+		Suite                string `json:"suite"`
+		PeerBinding          string `json:"peer_binding"`
+		AuthenticatedMedia   bool   `json:"authenticated_media"`
+		DowngradeRejected    bool   `json:"downgrade_rejected"`
+		ProvisionalSDPCount  int    `json:"provisional_sdp_count"`
+		ProvisionalTransport string `json:"provisional_transport"`
+		FinalSDP             bool   `json:"final_sdp"`
 	}{category, result.registered, result.registerStatus, result.inviteStatus,
 		result.answered, result.received, result.bye, result.unregistered,
 		result.mediaProfile, result.answerTransport, result.keying, result.suite,
-		result.peerBinding, result.authenticatedMedia, result.downgradeRejected}); err != nil {
+		result.peerBinding, result.authenticatedMedia, result.downgradeRejected,
+		result.provisionalSDPCount, result.provisionalTransport, result.finalSDP}); err != nil {
 		return errors.New("provider one-use result record incomplete")
 	}
 	if err := file.Sync(); err != nil {
