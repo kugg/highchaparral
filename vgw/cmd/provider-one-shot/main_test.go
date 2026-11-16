@@ -192,6 +192,25 @@ func TestProvisionalSDPDoesNotAbortBeforeAuthenticatedFinalAnswer(t *testing.T) 
 	}
 }
 
+func TestFinalSDPClassifiesAlternateKeyingWithoutRetainingIt(t *testing.T) {
+	secret := "ALTERNATE-KEY-MUST-NOT-BE-RETAINED"
+	response := &sip.Response{StatusCode: sip.StatusOK}
+	response.AppendHeader(sip.NewHeader("Content-Type", "application/sdp"))
+	response.SetBody([]byte("v=0\r\nm=audio 4000 RTP/SAVP 8\r\n" +
+		"a=crypto:7 AES_CM_128_HMAC_SHA1_32 inline:" + secret + "\r\n"))
+	observed, err := inspectMediaAnswer("sdes", response)
+	if err == nil {
+		t.Fatal("alternate suite was accepted as the configured suite")
+	}
+	if observed.keyingObservation != "sdes" || observed.suiteObservation != "aes128-sha1-32" ||
+		observed.cryptoAttributeCount != 1 || !observed.inlineKeyPresent {
+		t.Fatal("alternate SDES answer was not reduced to fixed safe categories")
+	}
+	if strings.Contains(fmt.Sprint(observed), secret) {
+		t.Fatal("sanitized alternate-suite observation retained key material")
+	}
+}
+
 func TestDTLSAnswerInspectionRequiresFingerprintAndSetup(t *testing.T) {
 	response := &sip.Response{StatusCode: sip.StatusOK}
 	response.AppendHeader(sip.NewHeader("Content-Type", "application/sdp"))
@@ -281,6 +300,10 @@ func TestAttemptStageIsOneUseOwnerOnlyAndKeepsSanitizedResult(t *testing.T) {
 	}
 	if profile, err := stageMediaProfile("srtp-sdes-v2-final-answer"); err != nil || profile != "sdes" {
 		t.Fatal("corrected SDES stage was not bound to its fixed media profile")
+	}
+	sdesV3Dir, err := stageDir("srtp-sdes-v3-keying-category")
+	if err != nil || sdesV3Dir == sdesV2Dir || !automatedStage("srtp-sdes-v3-keying-category") {
+		t.Fatal("keying-category probe could reuse a historical stage")
 	}
 	if err := requireAutomatedTarget(announcementDir, "1234"); err != nil {
 		t.Fatal("exact reviewed private target refused")

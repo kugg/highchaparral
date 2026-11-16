@@ -24,6 +24,8 @@ func stageDir(testID string) (string, error) {
 		return "secrets/attended-provider-srtp-sdes-v1", nil
 	case "srtp-sdes-v2-final-answer":
 		return "secrets/attended-provider-srtp-sdes-v2-final-answer", nil
+	case "srtp-sdes-v3-keying-category":
+		return "secrets/attended-provider-srtp-sdes-v3-keying-category", nil
 	case "srtp-dtls-v1":
 		return "secrets/attended-provider-srtp-dtls-v1", nil
 	default:
@@ -35,7 +37,7 @@ func stageMediaProfile(testID string) (string, error) {
 	switch testID {
 	case "first", "maze", "announcement":
 		return "plaintext", nil
-	case "srtp-sdes-v1", "srtp-sdes-v2-final-answer":
+	case "srtp-sdes-v1", "srtp-sdes-v2-final-answer", "srtp-sdes-v3-keying-category":
 		return "sdes", nil
 	case "srtp-dtls-v1":
 		return "dtls", nil
@@ -46,7 +48,7 @@ func stageMediaProfile(testID string) (string, error) {
 
 func automatedStage(testID string) bool {
 	switch testID {
-	case "announcement", "srtp-sdes-v1", "srtp-sdes-v2-final-answer", "srtp-dtls-v1":
+	case "announcement", "srtp-sdes-v1", "srtp-sdes-v2-final-answer", "srtp-sdes-v3-keying-category", "srtp-dtls-v1":
 		return true
 	default:
 		return false
@@ -205,11 +207,17 @@ func recordResult(dirName, category string, result outcome) error {
 		ProvisionalSDPCount  int    `json:"provisional_sdp_count"`
 		ProvisionalTransport string `json:"provisional_transport"`
 		FinalSDP             bool   `json:"final_sdp"`
+		KeyingObservation    string `json:"keying_observation"`
+		SuiteObservation     string `json:"suite_observation"`
+		CryptoAttributeCount int    `json:"crypto_attribute_count"`
+		InlineKeyPresent     bool   `json:"inline_key_present"`
 	}{category, result.registered, result.registerStatus, result.inviteStatus,
 		result.answered, result.received, result.bye, result.unregistered,
 		result.mediaProfile, result.answerTransport, result.keying, result.suite,
 		result.peerBinding, result.authenticatedMedia, result.downgradeRejected,
-		result.provisionalSDPCount, result.provisionalTransport, result.finalSDP}); err != nil {
+		result.provisionalSDPCount, result.provisionalTransport, result.finalSDP,
+		result.keyingObservation, result.suiteObservation, result.cryptoAttributeCount,
+		result.inlineKeyPresent}); err != nil {
 		return errors.New("provider one-use result record incomplete")
 	}
 	if err := file.Sync(); err != nil {

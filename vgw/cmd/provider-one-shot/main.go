@@ -120,6 +120,9 @@ type outcome struct {
 	provisionalSDPCount                               int
 	provisionalTransport                              string
 	finalSDP                                          bool
+	keyingObservation, suiteObservation               string
+	cryptoAttributeCount                              int
+	inlineKeyPresent                                  bool
 }
 
 type mediaOffer struct {
@@ -160,7 +163,7 @@ func inspectMediaAnswer(profile string, response *sip.Response) (outcome, error)
 		response.ContentType() == nil || !strings.EqualFold(response.ContentType().Value(), "application/sdp") {
 		return result, nil
 	}
-	var crypto, fingerprint, setup bool
+	var crypto, fingerprint, setup, mikey, zrtp bool
 	for _, raw := range strings.Split(strings.ReplaceAll(string(response.Body()), "\r\n", "\n"), "\n") {
 		line := strings.TrimSpace(raw)
 		if strings.HasPrefix(line, "m=audio ") {
@@ -171,7 +174,15 @@ func inspectMediaAnswer(profile string, response *sip.Response) (outcome, error)
 		}
 		if strings.HasPrefix(line, "a=crypto:") {
 			fields := strings.Fields(line)
-			crypto = len(fields) >= 3 && fields[1] == "AES_CM_128_HMAC_SHA1_80" && strings.HasPrefix(fields[2], "inline:")
+			result.cryptoAttributeCount++
+			if len(fields) < 3 {
+				result.suiteObservation = mergeObservation(result.suiteObservation, "malformed")
+				continue
+			}
+			result.suiteObservation = mergeObservation(result.suiteObservation, sdesSuiteCategory(fields[1]))
+			inline := strings.HasPrefix(fields[2], "inline:") && len(strings.TrimPrefix(fields[2], "inline:")) > 0
+			result.inlineKeyPresent = result.inlineKeyPresent || inline
+			crypto = crypto || fields[1] == "AES_CM_128_HMAC_SHA1_80" && inline
 		}
 		if strings.HasPrefix(strings.ToLower(line), "a=fingerprint:sha-256 ") {
 			fingerprint = true
@@ -180,7 +191,10 @@ func inspectMediaAnswer(profile string, response *sip.Response) (outcome, error)
 			role := strings.TrimPrefix(line, "a=setup:")
 			setup = role == "active" || role == "passive" || role == "actpass"
 		}
+		mikey = mikey || strings.HasPrefix(strings.ToLower(line), "a=key-mgmt:mikey")
+		zrtp = zrtp || strings.HasPrefix(strings.ToLower(line), "a=zrtp-hash:")
 	}
+	result.keyingObservation = keyingCategory(result.cryptoAttributeCount > 0, fingerprint, mikey, zrtp)
 	// A provisional SDP answer can describe early media without containing the
 	// keying material that will be present in the final answer. It is useful
 	// evidence, but it is not the negotiated session and must never abort the
@@ -212,6 +226,49 @@ func inspectMediaAnswer(profile string, response *sip.Response) (outcome, error)
 	return result, nil
 }
 
+func mergeObservation(current, next string) string {
+	if current == "" || current == next {
+		return next
+	}
+	return "multiple"
+}
+
+func sdesSuiteCategory(suite string) string {
+	switch suite {
+	case "AES_CM_128_HMAC_SHA1_80":
+		return "aes128-sha1-80"
+	case "AES_CM_128_HMAC_SHA1_32":
+		return "aes128-sha1-32"
+	case "AES_CM_256_HMAC_SHA1_80":
+		return "aes256-sha1-80"
+	case "AES_CM_256_HMAC_SHA1_32":
+		return "aes256-sha1-32"
+	case "AEAD_AES_128_GCM":
+		return "aead-aes128-gcm"
+	case "AEAD_AES_256_GCM":
+		return "aead-aes256-gcm"
+	case "NULL_HMAC_SHA1_80", "NULL_HMAC_SHA1_32":
+		return "null-cipher"
+	default:
+		return "other"
+	}
+}
+
+func keyingCategory(sdes, fingerprint, mikey, zrtp bool) string {
+	categories := 0
+	category := "none"
+	for name, present := range map[string]bool{"sdes": sdes, "dtls": fingerprint, "mikey": mikey, "zrtp": zrtp} {
+		if present {
+			categories++
+			category = name
+		}
+	}
+	if categories > 1 {
+		return "multiple"
+	}
+	return category
+}
+
 // observeMediaResponse keeps provisional and final SDP evidence distinct.
 // It returns a negotiation error only for a final response. No raw SDP,
 // addresses, key material or fingerprints are retained.
@@ -231,6 +288,10 @@ func observeMediaResponse(profile string, response *sip.Response, result *outcom
 	result.suite = observed.suite
 	result.peerBinding = observed.peerBinding
 	result.downgradeRejected = observed.downgradeRejected
+	result.keyingObservation = observed.keyingObservation
+	result.suiteObservation = observed.suiteObservation
+	result.cryptoAttributeCount = observed.cryptoAttributeCount
+	result.inlineKeyPresent = observed.inlineKeyPresent
 	return err
 }
 
@@ -530,7 +591,11 @@ func main() {
 		"downgrade_rejected", result.downgradeRejected,
 		"provisional_sdp_count", result.provisionalSDPCount,
 		"provisional_transport", result.provisionalTransport,
-		"final_sdp", result.finalSDP)
+		"final_sdp", result.finalSDP,
+		"keying_observation", result.keyingObservation,
+		"suite_observation", result.suiteObservation,
+		"crypto_attribute_count", result.cryptoAttributeCount,
+		"inline_key_present", result.inlineKeyPresent)
 	if category != "pass" {
 		os.Exit(2)
 	}
