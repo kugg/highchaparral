@@ -22,6 +22,7 @@ import (
 	"example.com/ata/voip-gateway/internal/safesip"
 	"github.com/emiago/diago"
 	"github.com/emiago/diago/media"
+	"github.com/emiago/dtls/v3/pkg/crypto/selfsign"
 	"github.com/emiago/sipgo"
 	"github.com/emiago/sipgo/sip"
 )
@@ -103,16 +104,115 @@ func loadCredentials(path string) (credentials, error) {
 }
 
 type config struct {
-	host, tlsName, bindHost, target string
-	port                            int
-	roots                           *x509.CertPool
-	creds                           credentials
-	allowLoopback                   bool // tests only; the executable never sets this
+	host, tlsName, bindHost, target, mediaProfile string
+	port                                          int
+	roots                                         *x509.CertPool
+	creds                                         credentials
+	allowLoopback                                 bool // tests only; the executable never sets this
 }
 
 type outcome struct {
 	registered, answered, received, bye, unregistered bool
 	registerStatus, inviteStatus                      int
+	mediaProfile, answerTransport, keying, suite      string
+	peerBinding                                       string
+	authenticatedMedia, downgradeRejected             bool
+}
+
+type mediaOffer struct {
+	mode        int
+	dtls        media.DTLSConfig
+	transport   string
+	keying      string
+	suite       string
+	peerBinding string
+}
+
+func mediaOfferFor(profile string) (mediaOffer, error) {
+	switch profile {
+	case "plaintext":
+		return mediaOffer{transport: "RTP/AVP", keying: "none", suite: "none", peerBinding: "none"}, nil
+	case "sdes":
+		return mediaOffer{mode: 1, transport: "RTP/SAVP", keying: "sdes",
+			suite: "AES_CM_128_HMAC_SHA1_80", peerBinding: "sdp-key-over-verified-sip-tls"}, nil
+	case "dtls":
+		certificate, err := selfsign.GenerateSelfSigned()
+		if err != nil {
+			return mediaOffer{}, errors.New("local DTLS certificate unavailable")
+		}
+		return mediaOffer{mode: 2, dtls: media.DTLSConfig{Certificates: []tls.Certificate{certificate}},
+			transport: "UDP/TLS/RTP/SAVP", keying: "dtls-srtp",
+			suite: "dtls-selected-srtp-profile", peerBinding: "sdp-fingerprint-over-verified-sip-tls"}, nil
+	default:
+		return mediaOffer{}, errors.New("unreviewed media profile")
+	}
+}
+
+// inspectMediaAnswer returns only fixed capability categories. It never returns
+// raw SDP, inline SDES key material, fingerprints, addresses or SIP headers.
+func inspectMediaAnswer(profile string, response *sip.Response) (outcome, error) {
+	var result outcome
+	result.mediaProfile = profile
+	if response == nil || response.StatusCode < 180 || response.StatusCode >= 300 ||
+		response.ContentType() == nil || !strings.EqualFold(response.ContentType().Value(), "application/sdp") {
+		return result, nil
+	}
+	var crypto, fingerprint, setup bool
+	for _, raw := range strings.Split(strings.ReplaceAll(string(response.Body()), "\r\n", "\n"), "\n") {
+		line := strings.TrimSpace(raw)
+		if strings.HasPrefix(line, "m=audio ") {
+			fields := strings.Fields(line)
+			if len(fields) >= 4 {
+				result.answerTransport = fields[2]
+			}
+		}
+		if strings.HasPrefix(line, "a=crypto:") {
+			fields := strings.Fields(line)
+			crypto = len(fields) >= 3 && fields[1] == "AES_CM_128_HMAC_SHA1_80" && strings.HasPrefix(fields[2], "inline:")
+		}
+		if strings.HasPrefix(strings.ToLower(line), "a=fingerprint:sha-256 ") {
+			fingerprint = true
+		}
+		if strings.HasPrefix(line, "a=setup:") {
+			role := strings.TrimPrefix(line, "a=setup:")
+			setup = role == "active" || role == "passive" || role == "actpass"
+		}
+	}
+	switch profile {
+	case "plaintext":
+		if result.answerTransport != "RTP/AVP" {
+			return result, errors.New("unexpected plaintext media answer")
+		}
+		result.keying, result.suite, result.peerBinding = "none", "none", "none"
+	case "sdes":
+		result.downgradeRejected = result.answerTransport == "RTP/AVP"
+		if result.answerTransport != "RTP/SAVP" || !crypto {
+			return result, errors.New("authenticated SDES media not negotiated")
+		}
+		result.keying, result.suite, result.peerBinding = "sdes", "AES_CM_128_HMAC_SHA1_80", "sdp-key-over-verified-sip-tls"
+	case "dtls":
+		result.downgradeRejected = result.answerTransport == "RTP/AVP"
+		if (result.answerTransport != "UDP/TLS/RTP/SAVP" && result.answerTransport != "UDP/TLS/RTP/SAVPF") || !fingerprint || !setup {
+			return result, errors.New("authenticated DTLS-SRTP media not negotiated")
+		}
+		result.keying, result.suite, result.peerBinding = "dtls-srtp", "dtls-selected-srtp-profile", "sdp-fingerprint-over-verified-sip-tls"
+	default:
+		return result, errors.New("unreviewed media profile")
+	}
+	return result, nil
+}
+
+func secureTransportMatches(profile, answer string) bool {
+	switch profile {
+	case "plaintext":
+		return answer == "RTP/AVP"
+	case "sdes":
+		return answer == "RTP/SAVP"
+	case "dtls":
+		return answer == "UDP/TLS/RTP/SAVP" || answer == "UDP/TLS/RTP/SAVPF"
+	default:
+		return false
+	}
 }
 
 func localBindIP(host string, port int) (string, error) {
@@ -155,6 +255,11 @@ func oneCall(ctx context.Context, c config) (result outcome, category string) {
 		!regexp.MustCompile(`^[0-9]{2,5}$`).MatchString(c.target) {
 		return result, "invalid-config"
 	}
+	offer, err := mediaOfferFor(c.mediaProfile)
+	if err != nil {
+		return result, "invalid-media-profile"
+	}
+	result.mediaProfile = c.mediaProfile
 	quiet := safesip.Logger
 	ua, err := sipgo.NewUA(sipgo.WithUserAgenTLSConfig(&tls.Config{
 		MinVersion: tls.VersionTLS12, RootCAs: c.roots, ServerName: c.tlsName,
@@ -167,6 +272,7 @@ func oneCall(ctx context.Context, c config) (result outcome, category string) {
 	defer ua.Close()
 	dg := diago.NewDiago(ua, diago.WithTransport(diago.Transport{
 		Transport: "tls", BindHost: c.bindHost, BindPort: 0,
+		MediaSRTP: offer.mode, MediaDTLSConf: offer.dtls,
 	}), diago.WithMediaConfig(diago.MediaConfig{Codecs: []media.Codec{media.CodecAudioAlaw}}),
 		diago.WithLogger(quiet))
 	uri := sip.Uri{Scheme: "sips", User: c.creds.user, Host: c.host, Port: c.port}
@@ -204,6 +310,17 @@ func oneCall(ctx context.Context, c config) (result outcome, category string) {
 	inviteCtx, stopInvite := context.WithTimeout(ctx, 12*time.Second)
 	call, med, err := dg.Invite(inviteCtx, recipient, diago.InviteOptions{
 		Transport: "tls", Username: c.creds.user, Password: c.creds.pass,
+		OnResponse: func(response *sip.Response) error {
+			observed, inspectErr := inspectMediaAnswer(c.mediaProfile, response)
+			if observed.answerTransport != "" {
+				result.answerTransport = observed.answerTransport
+				result.keying = observed.keying
+				result.suite = observed.suite
+				result.peerBinding = observed.peerBinding
+				result.downgradeRejected = observed.downgradeRejected
+			}
+			return inspectErr
+		},
 	})
 	stopInvite()
 	if err != nil {
@@ -226,6 +343,10 @@ func oneCall(ctx context.Context, c config) (result outcome, category string) {
 		(!c.allowLoopback && (session.Raddr.IP.IsLoopback() || session.Raddr.IP.IsPrivate() ||
 			session.Raddr.IP.IsMulticast() || session.Raddr.IP.IsUnspecified())) {
 		return result, "provider-sdp-refused"
+	}
+	if session.SecureRTP != offer.mode || !secureTransportMatches(c.mediaProfile, result.answerTransport) {
+		result.downgradeRejected = result.answerTransport == "RTP/AVP" && offer.mode > 0
+		return result, "media-downgrade-refused"
 	}
 	if codecs := session.CommonCodecs(); len(codecs) != 1 || codecs[0].PayloadType != 8 {
 		return result, "provider-codec-refused"
@@ -269,6 +390,7 @@ func oneCall(ctx context.Context, c config) (result outcome, category string) {
 		select {
 		case <-got:
 			result.received = true
+			result.authenticatedMedia = offer.mode > 0
 			return result, "pass"
 		case <-ctx.Done():
 			return result, "media-timeout"
@@ -278,6 +400,7 @@ func oneCall(ctx context.Context, c config) (result outcome, category string) {
 	select {
 	case <-got:
 		result.received = true
+		result.authenticatedMedia = offer.mode > 0
 		return result, "pass"
 	case <-time.After(4 * time.Second):
 		return result, "no-return-media"
@@ -293,7 +416,7 @@ func main() {
 	approve := flag.Bool("approve-automated", false, "stage one owner-private automated destination; no network")
 	flag.Parse()
 	if !*run && !*check && !*approve {
-		fmt.Println("DRY RUN: one dedicated test account, verified SIP/TLS, operator-approved numeric extension, bounded RTP/BYE/unregister")
+		fmt.Println("DRY RUN: one dedicated test account, verified SIP/TLS, fixed one-use media profile, operator-approved numeric extension, bounded media/BYE/unregister")
 		return
 	}
 	if (*run && *check) || (*approve && (*run || *check)) || flag.NArg() != 0 {
@@ -305,15 +428,31 @@ func main() {
 		slog.Error("provider test refused", "category", "unknown-one-use-stage")
 		os.Exit(2)
 	}
+	mediaProfile, err := stageMediaProfile(*testID)
+	if err != nil {
+		slog.Error("provider test refused", "category", "unknown-media-profile")
+		os.Exit(2)
+	}
 	if *approve {
-		if *testID != "announcement" || prepareAutomatedTarget(dirName, os.Getenv("ATA_PROVIDER_TEST_EXTENSION")) != nil {
+		target := os.Getenv("ATA_PROVIDER_TEST_EXTENSION")
+		if target == "" && *testID != "announcement" {
+			source := os.Getenv("ATA_PROVIDER_APPROVED_TARGET_STAGE")
+			if source != "" {
+				target, err = readAutomatedTarget(source)
+			}
+		}
+		if err != nil || !automatedStage(*testID) || prepareAutomatedTarget(dirName, target) != nil {
 			slog.Error("provider test refused", "category", "automated-approval")
 			os.Exit(2)
 		}
 		slog.Info("automated target approved in owner-private one-use stage; no network used")
 		return
 	}
-	creds, err := loadCredentials(credentialFile)
+	credentialPath := credentialFile
+	if configured := os.Getenv("ATA_PROVIDER_TEST_CREDENTIAL_FILE"); configured != "" {
+		credentialPath = configured
+	}
+	creds, err := loadCredentials(credentialPath)
 	if err != nil {
 		slog.Error("provider test refused", "category", "credential-file")
 		os.Exit(2)
@@ -323,11 +462,14 @@ func main() {
 		return
 	}
 	target := os.Getenv("ATA_PROVIDER_TEST_EXTENSION")
-	if !regexp.MustCompile(`^[0-9]{2,5}$`).MatchString(target) {
+	if target == "" && automatedStage(*testID) {
+		target, err = readAutomatedTarget(dirName)
+	}
+	if err != nil || !regexp.MustCompile(`^[0-9]{2,5}$`).MatchString(target) {
 		slog.Error("provider test refused", "category", "missing-approved-target")
 		os.Exit(2)
 	}
-	if *testID != "announcement" || requireAutomatedTarget(dirName, target) != nil {
+	if !automatedStage(*testID) || requireAutomatedTarget(dirName, target) != nil {
 		slog.Error("provider test refused", "category", "unapproved-automated-target")
 		os.Exit(2)
 	}
@@ -348,7 +490,7 @@ func main() {
 		os.Exit(2)
 	}
 	result, category := oneCall(ctx, config{host: provider, tlsName: provider, port: port, target: target,
-		roots: roots, bindHost: bind, creds: creds})
+		roots: roots, bindHost: bind, creds: creds, mediaProfile: mediaProfile})
 	if err := recordResult(dirName, category, result); err != nil {
 		slog.Error("provider test outcome needs manual review", "category", "stage-result-ambiguous")
 		os.Exit(2)
@@ -357,7 +499,11 @@ func main() {
 		"registered", result.registered, "register_status", result.registerStatus,
 		"invite_status", result.inviteStatus, "answered", result.answered,
 		"media_returned", result.received, "bye", result.bye,
-		"unregistered", result.unregistered)
+		"unregistered", result.unregistered, "media_profile", result.mediaProfile,
+		"answer_transport", result.answerTransport, "keying", result.keying,
+		"suite", result.suite, "peer_binding", result.peerBinding,
+		"authenticated_media", result.authenticatedMedia,
+		"downgrade_rejected", result.downgradeRejected)
 	if category != "pass" {
 		os.Exit(2)
 	}
