@@ -561,7 +561,7 @@ func TestStasisSubscriptionRejectsBadProofAndDetectsDisconnect(t *testing.T) {
 	}
 	select {
 	case <-m.subscribed:
-	default:
+	case <-time.After(time.Second):
 		t.Fatal("mock Stasis subscription was not opened")
 	}
 	close(m.dropSubscription)
