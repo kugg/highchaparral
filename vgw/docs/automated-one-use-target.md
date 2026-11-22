@@ -53,3 +53,35 @@ was intelligible; no audio was stored. Separate read-only APU
 checks still found zero calls, ARI auth/negative controls, the
 same ATA peer and stopped REGISTER-only `vgw`. Prior Maze BYE
 ambiguity is NOT retroactively resolved by this distinct call.
+
+## Authenticated-media capability probes
+
+The separately named `srtp-sdes-v1` and `srtp-dtls-v1` stages measure
+provider support for two fixed authenticated-media profiles. They inherit an
+already reviewed automated target into distinct owner-private one-use stages;
+they never accept a target from ticket prose or source code. Each stage may be
+prepared once and attempted once. An ambiguous result is evidence and must not
+be retried under the same identity.
+
+The SDES probe requires `RTP/SAVP`, `AES_CM_128_HMAC_SHA1_80` and an inline key
+delivered inside the CA/hostname-verified SIP/TLS session. The DTLS-SRTP probe
+requires `UDP/TLS/RTP/SAVP` or `SAVPF`, a SHA-256 fingerprint and a valid DTLS
+setup role delivered inside that same verified signaling channel. Either probe
+rejects plaintext RTP answers before media is admitted. A capability passes
+only after the runtime reports the expected secure media mode and decrypted
+PCMA media returns from the negotiated source.
+
+The durable result contains only fixed categories: profile, answer transport,
+keying family, suite category, signaling binding, downgrade rejection and the
+bounded call lifecycle booleans. It never stores SDP, SDES keys, DTLS
+fingerprints, credentials, addresses, headers, target numbers or audio. These
+probes establish provider capability; they do not implement the production VGW
+repair or authorize fallback to plaintext media.
+
+The consumed `srtp-sdes-v1` probe treated an incomplete provisional SDP as a
+final answer and could abort before the provider's final negotiation. It is
+historical evidence, not a provider capability verdict. The separately named
+`srtp-sdes-v2-final-answer` stage corrects that measurement error: provisional
+SDP is recorded only as a safe transport/count observation, while the final
+2xx SDP must carry the accepted SDES profile. Success still additionally
+requires returned media to pass SRTP authentication and decrypt as PCMA.

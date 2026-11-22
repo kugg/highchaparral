@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -19,8 +20,38 @@ func stageDir(testID string) (string, error) {
 		return "secrets/attended-provider-maze", nil
 	case "announcement":
 		return "secrets/attended-provider-announcement-v1", nil
+	case "srtp-sdes-v1":
+		return "secrets/attended-provider-srtp-sdes-v1", nil
+	case "srtp-sdes-v2-final-answer":
+		return "secrets/attended-provider-srtp-sdes-v2-final-answer", nil
+	case "srtp-sdes-v3-keying-category":
+		return "secrets/attended-provider-srtp-sdes-v3-keying-category", nil
+	case "srtp-dtls-v1":
+		return "secrets/attended-provider-srtp-dtls-v1", nil
 	default:
 		return "", errors.New("unreviewed one-use provider test identity")
+	}
+}
+
+func stageMediaProfile(testID string) (string, error) {
+	switch testID {
+	case "first", "maze", "announcement":
+		return "plaintext", nil
+	case "srtp-sdes-v1", "srtp-sdes-v2-final-answer", "srtp-sdes-v3-keying-category":
+		return "sdes", nil
+	case "srtp-dtls-v1":
+		return "dtls", nil
+	default:
+		return "", errors.New("unreviewed one-use provider test identity")
+	}
+}
+
+func automatedStage(testID string) bool {
+	switch testID {
+	case "announcement", "srtp-sdes-v1", "srtp-sdes-v2-final-answer", "srtp-sdes-v3-keying-category", "srtp-dtls-v1":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -70,28 +101,37 @@ func prepareAutomatedTarget(dirName, target string) error {
 	return nil
 }
 
-func requireAutomatedTarget(dirName, target string) error {
-	if !regexp.MustCompile(`^[0-9]{2,5}$`).MatchString(target) {
-		return errors.New("unreviewed automated target")
-	}
+func readAutomatedTarget(dirName string) (string, error) {
 	dir, err := os.Lstat(dirName)
 	if err != nil || !dir.IsDir() || dir.Mode().Perm() != 0700 ||
 		dir.Sys().(*syscall.Stat_t).Uid != uint32(os.Getuid()) {
-		return errors.New("private automated target stage changed")
+		return "", errors.New("private automated target stage changed")
 	}
 	f, err := os.OpenFile(filepath.Join(dirName, "approved_target"), os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
-		return errors.New("private automated target unavailable")
+		return "", errors.New("private automated target unavailable")
 	}
 	defer f.Close()
 	meta, err := f.Stat()
-	if err != nil || !meta.Mode().IsRegular() || meta.Mode().Perm() != 0600 ||
+	if err != nil || !meta.Mode().IsRegular() || meta.Mode().Perm() != 0600 || meta.Size() < 3 || meta.Size() > 6 ||
 		meta.Sys().(*syscall.Stat_t).Uid != uint32(os.Getuid()) ||
-		meta.Sys().(*syscall.Stat_t).Nlink != 1 || meta.Size() != int64(len(target)+1) {
-		return errors.New("private automated target changed")
+		meta.Sys().(*syscall.Stat_t).Nlink != 1 {
+		return "", errors.New("private automated target changed")
 	}
 	raw := make([]byte, meta.Size())
-	if _, err := io.ReadFull(f, raw); err != nil || string(raw) != target+"\n" {
+	if _, err := io.ReadFull(f, raw); err != nil {
+		return "", errors.New("private automated target unreadable")
+	}
+	target := strings.TrimSuffix(string(raw), "\n")
+	if string(raw) != target+"\n" || !regexp.MustCompile(`^[0-9]{2,5}$`).MatchString(target) {
+		return "", errors.New("private automated target changed")
+	}
+	return target, nil
+}
+
+func requireAutomatedTarget(dirName, target string) error {
+	approved, err := readAutomatedTarget(dirName)
+	if err != nil || approved != target {
 		return errors.New("private automated target mismatch")
 	}
 	return nil
@@ -146,18 +186,38 @@ func recordResult(dirName, category string, result outcome) error {
 		return errors.New("provider one-use result already recorded or unavailable")
 	}
 	defer file.Close()
-	// No account identity, registrar header, IP, SDP, credential or media.
+	// No account identity, registrar header, IP, SDP, credential, key material,
+	// fingerprint or media. Only fixed negotiation/result categories are kept.
 	if err := json.NewEncoder(file).Encode(struct {
-		Category       string `json:"category"`
-		Registered     bool   `json:"registered"`
-		RegisterStatus int    `json:"register_status"`
-		InviteStatus   int    `json:"invite_status"`
-		Answered       bool   `json:"answered"`
-		MediaReturned  bool   `json:"media_returned"`
-		BYE            bool   `json:"bye"`
-		Unregistered   bool   `json:"unregistered"`
+		Category             string `json:"category"`
+		Registered           bool   `json:"registered"`
+		RegisterStatus       int    `json:"register_status"`
+		InviteStatus         int    `json:"invite_status"`
+		Answered             bool   `json:"answered"`
+		MediaReturned        bool   `json:"media_returned"`
+		BYE                  bool   `json:"bye"`
+		Unregistered         bool   `json:"unregistered"`
+		MediaProfile         string `json:"media_profile"`
+		AnswerTransport      string `json:"answer_transport"`
+		Keying               string `json:"keying"`
+		Suite                string `json:"suite"`
+		PeerBinding          string `json:"peer_binding"`
+		AuthenticatedMedia   bool   `json:"authenticated_media"`
+		DowngradeRejected    bool   `json:"downgrade_rejected"`
+		ProvisionalSDPCount  int    `json:"provisional_sdp_count"`
+		ProvisionalTransport string `json:"provisional_transport"`
+		FinalSDP             bool   `json:"final_sdp"`
+		KeyingObservation    string `json:"keying_observation"`
+		SuiteObservation     string `json:"suite_observation"`
+		CryptoAttributeCount int    `json:"crypto_attribute_count"`
+		InlineKeyPresent     bool   `json:"inline_key_present"`
 	}{category, result.registered, result.registerStatus, result.inviteStatus,
-		result.answered, result.received, result.bye, result.unregistered}); err != nil {
+		result.answered, result.received, result.bye, result.unregistered,
+		result.mediaProfile, result.answerTransport, result.keying, result.suite,
+		result.peerBinding, result.authenticatedMedia, result.downgradeRejected,
+		result.provisionalSDPCount, result.provisionalTransport, result.finalSDP,
+		result.keyingObservation, result.suiteObservation, result.cryptoAttributeCount,
+		result.inlineKeyPresent}); err != nil {
 		return errors.New("provider one-use result record incomplete")
 	}
 	if err := file.Sync(); err != nil {
