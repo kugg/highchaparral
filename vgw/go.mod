@@ -3,8 +3,8 @@ module example.com/ata/voip-gateway
 go 1.26
 
 require (
-	github.com/emiago/diago v0.42.1
-	github.com/emiago/sipgo v1.7.2
+	github.com/emiago/diago v0.42.2
+	github.com/emiago/sipgo v1.7.3
 	github.com/gobwas/ws v1.5.0
 	github.com/icholy/digest v1.2.0
 	github.com/pion/rtp v1.10.6
